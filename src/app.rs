@@ -54,7 +54,7 @@ impl App {
             tides_client: TidesClient::new(cache.clone()),
             water_quality_client: cache
                 .map(WaterQualityClient::with_cache)
-                .unwrap_or_else(WaterQualityClient::new),
+                .unwrap_or_default(),
         }
     }
 

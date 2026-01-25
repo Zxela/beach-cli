@@ -445,7 +445,7 @@ impl TidesClient {
                 let local_time = Local
                     .from_local_datetime(&pred_dt)
                     .single()
-                    .unwrap_or_else(|| now);
+                    .unwrap_or(now);
 
                 let event = TideEvent {
                     time: local_time,

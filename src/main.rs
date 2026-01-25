@@ -3,6 +3,7 @@
 //! A terminal UI application that displays weather, tides, and water quality
 //! information for beaches in Vancouver, BC.
 
+mod activities;
 mod app;
 mod cache;
 mod data;
