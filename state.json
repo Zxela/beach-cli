@@ -4,8 +4,19 @@
   "worktree": "/home/zxela/weather-cli-create-best-time-6bd3ce26",
   "feature": "best-time-feature",
   "created_at": "2026-01-25T12:15:00Z",
-  "phase": "discovery",
-  "tasks": {},
+  "phase": "implementing",
+  "tasks": {
+    "012": { "status": "pending", "file": "docs/tasks/012-activity-types.md" },
+    "013": { "status": "pending", "file": "docs/tasks/013-hourly-weather.md" },
+    "014": { "status": "pending", "file": "docs/tasks/014-tide-interpolation.md" },
+    "015": { "status": "pending", "file": "docs/tasks/015-crowd-heuristics.md" },
+    "016": { "status": "pending", "file": "docs/tasks/016-scoring-engine.md" },
+    "017": { "status": "pending", "file": "docs/tasks/017-app-state.md" },
+    "018": { "status": "pending", "file": "docs/tasks/018-beach-detail-ui.md" },
+    "019": { "status": "pending", "file": "docs/tasks/019-list-hints.md" },
+    "020": { "status": "pending", "file": "docs/tasks/020-plan-screen.md" },
+    "021": { "status": "pending", "file": "docs/tasks/021-cli-args.md" }
+  },
   "current_task": null,
   "config": {
     "auto_mode": false,
