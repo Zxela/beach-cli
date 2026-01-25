@@ -466,6 +466,110 @@ impl TidesClient {
 
         (next_high, next_low)
     }
+
+    /// Returns the maximum tide height for normalization purposes
+    ///
+    /// This returns the highest recorded tide height from the static predictions,
+    /// which is approximately 4.8m for Point Atkinson.
+    pub fn get_max_tide_height(&self) -> f32 {
+        // The maximum tide height in the January 2026 predictions is 4.8m
+        // This occurs on January 1st at 2:15 AM
+        4.8
+    }
+
+    /// Estimates tide height at a specific hour of the day using interpolation
+    ///
+    /// Uses cosine interpolation between known high/low tide points for a realistic
+    /// tidal curve. The hour should be in 24-hour format (0-23).
+    ///
+    /// # Arguments
+    /// * `date` - The date to get the tide height for
+    /// * `hour` - The hour of the day (0-23)
+    ///
+    /// # Returns
+    /// * `Some(f32)` - The interpolated tide height in meters
+    /// * `None` - If no tide data is available for the given date
+    pub fn get_height_at_hour(&self, date: NaiveDate, hour: u8) -> Option<f32> {
+        if hour > 23 {
+            return None;
+        }
+
+        // Get predictions for the date and surrounding days to handle edge cases
+        let predictions = self.get_predictions_for_date_range(
+            date.checked_sub_signed(chrono::Duration::days(1))?,
+            3,
+        );
+
+        if predictions.is_empty() {
+            return None;
+        }
+
+        // Create the target time
+        let target_time = NaiveTime::from_hms_opt(hour as u32, 0, 0)?;
+        let target_dt = date.and_time(target_time);
+
+        // Find surrounding events
+        let (prev_event, next_event) = self.find_surrounding_predictions(&predictions, target_dt);
+
+        // Calculate interpolated height
+        let height = self.interpolate_height(prev_event.as_ref(), next_event.as_ref(), target_dt);
+
+        Some(height as f32)
+    }
+
+    /// Finds the previous and next tide predictions relative to a given naive datetime
+    fn find_surrounding_predictions(
+        &self,
+        predictions: &[TidePrediction],
+        target: chrono::NaiveDateTime,
+    ) -> (Option<TidePrediction>, Option<TidePrediction>) {
+        let mut prev_event: Option<TidePrediction> = None;
+        let mut next_event: Option<TidePrediction> = None;
+
+        for pred in predictions {
+            let pred_dt = pred.date.and_time(pred.time);
+
+            if pred_dt <= target {
+                prev_event = Some(pred.clone());
+            } else if next_event.is_none() {
+                next_event = Some(pred.clone());
+                break;
+            }
+        }
+
+        (prev_event, next_event)
+    }
+
+    /// Interpolates tide height between two predictions using cosine interpolation
+    fn interpolate_height(
+        &self,
+        prev_event: Option<&TidePrediction>,
+        next_event: Option<&TidePrediction>,
+        target: chrono::NaiveDateTime,
+    ) -> f64 {
+        match (prev_event, next_event) {
+            (Some(prev), Some(next)) => {
+                let prev_dt = prev.date.and_time(prev.time);
+                let next_dt = next.date.and_time(next.time);
+
+                let total_duration = (next_dt - prev_dt).num_seconds() as f64;
+                let elapsed = (target - prev_dt).num_seconds() as f64;
+
+                let progress = if total_duration > 0.0 {
+                    (elapsed / total_duration).clamp(0.0, 1.0)
+                } else {
+                    0.5
+                };
+
+                // Cosine interpolation for realistic tidal curve
+                let cosine_progress = (1.0 - (progress * std::f64::consts::PI).cos()) / 2.0;
+                prev.height + (next.height - prev.height) * cosine_progress
+            }
+            (Some(prev), None) => prev.height,
+            (None, Some(next)) => next.height,
+            (None, None) => 2.5, // Default mid-tide
+        }
+    }
 }
 
 #[cfg(test)]
@@ -691,5 +795,185 @@ mod tests {
         let date = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
         let predictions = client.get_predictions_for_date(date);
         assert!(predictions.is_empty(), "2025 should have no data");
+    }
+
+    // Tests for get_height_at_hour and get_max_tide_height
+
+    #[test]
+    fn test_get_max_tide_height_returns_reasonable_value() {
+        let client = TidesClient::new(None);
+        let max_height = client.get_max_tide_height();
+
+        // Max tide height should be around 4.8m for Point Atkinson
+        assert!(
+            (max_height - 4.8).abs() < 0.01,
+            "Max tide height should be 4.8m, got {}",
+            max_height
+        );
+
+        // Should be positive
+        assert!(max_height > 0.0, "Max tide height should be positive");
+
+        // Should be in reasonable range for Vancouver tides (typically 0-6m)
+        assert!(
+            max_height >= 4.0 && max_height <= 6.0,
+            "Max tide height should be in reasonable range (4-6m)"
+        );
+    }
+
+    #[test]
+    fn test_get_height_at_hour_at_high_tide_time() {
+        let client = TidesClient::new(None);
+
+        // January 1, 2026 has a high tide at 2:15 AM with height 4.8m
+        let date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+
+        // At hour 2 (close to the 2:15 high tide), height should be close to 4.8
+        let height = client.get_height_at_hour(date, 2);
+
+        assert!(height.is_some(), "Should return height for valid date/hour");
+        let h = height.unwrap();
+
+        // Allow some tolerance since we're at hour 2, not exactly 2:15
+        assert!(
+            (h - 4.8).abs() < 0.3,
+            "Height at hour 2 should be close to high tide 4.8m, got {}",
+            h
+        );
+    }
+
+    #[test]
+    fn test_get_height_at_hour_at_low_tide_time() {
+        let client = TidesClient::new(None);
+
+        // January 1, 2026 has a low tide at 8:45 AM with height 1.2m
+        let date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+
+        // At hour 9 (close to the 8:45 low tide), height should be close to 1.2
+        let height = client.get_height_at_hour(date, 9);
+
+        assert!(height.is_some(), "Should return height for valid date/hour");
+        let h = height.unwrap();
+
+        // Allow some tolerance since we're at hour 9, not exactly 8:45
+        assert!(
+            (h - 1.2).abs() < 0.4,
+            "Height at hour 9 should be close to low tide 1.2m, got {}",
+            h
+        );
+    }
+
+    #[test]
+    fn test_get_height_at_hour_midpoint_between_tides() {
+        let client = TidesClient::new(None);
+
+        // January 1, 2026: low at 8:45 (1.2m), high at 14:30 (4.5m)
+        // Midpoint is around hour 11-12
+        let date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+
+        let height = client.get_height_at_hour(date, 11);
+
+        assert!(height.is_some(), "Should return height for valid date/hour");
+        let h = height.unwrap();
+
+        // At midpoint, height should be between low (1.2) and high (4.5)
+        assert!(
+            h > 1.2 && h < 4.5,
+            "Height at midpoint should be between low and high, got {}",
+            h
+        );
+
+        // With cosine interpolation at midpoint, should be close to average
+        let avg = (1.2 + 4.5) / 2.0;
+        assert!(
+            (h - avg as f32).abs() < 1.0,
+            "Height at midpoint should be reasonably close to average {}, got {}",
+            avg,
+            h
+        );
+    }
+
+    #[test]
+    fn test_get_height_at_hour_returns_none_for_no_data() {
+        let client = TidesClient::new(None);
+
+        // February 2026 has no tide data
+        let date = NaiveDate::from_ymd_opt(2026, 2, 15).unwrap();
+        let height = client.get_height_at_hour(date, 12);
+
+        assert!(
+            height.is_none(),
+            "Should return None for dates without data"
+        );
+
+        // 2025 has no data
+        let date = NaiveDate::from_ymd_opt(2025, 1, 15).unwrap();
+        let height = client.get_height_at_hour(date, 12);
+
+        assert!(height.is_none(), "Should return None for 2025");
+    }
+
+    #[test]
+    fn test_get_height_at_hour_invalid_hour() {
+        let client = TidesClient::new(None);
+        let date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+
+        // Hour 24 is invalid
+        let height = client.get_height_at_hour(date, 24);
+        assert!(height.is_none(), "Should return None for invalid hour 24");
+
+        // Hour 255 is invalid
+        let height = client.get_height_at_hour(date, 255);
+        assert!(height.is_none(), "Should return None for invalid hour 255");
+    }
+
+    #[test]
+    fn test_get_height_at_hour_all_hours_valid_day() {
+        let client = TidesClient::new(None);
+        let date = NaiveDate::from_ymd_opt(2026, 1, 15).unwrap();
+
+        // All 24 hours should return valid heights
+        for hour in 0..24u8 {
+            let height = client.get_height_at_hour(date, hour);
+            assert!(
+                height.is_some(),
+                "Hour {} should return valid height",
+                hour
+            );
+
+            let h = height.unwrap();
+            // All heights should be in reasonable range
+            assert!(
+                h >= 0.0 && h <= 6.0,
+                "Height at hour {} should be in reasonable range, got {}",
+                hour,
+                h
+            );
+        }
+    }
+
+    #[test]
+    fn test_get_height_at_hour_consistency_across_day() {
+        let client = TidesClient::new(None);
+        let date = NaiveDate::from_ymd_opt(2026, 1, 10).unwrap();
+
+        // Get all heights for the day
+        let heights: Vec<f32> = (0..24u8)
+            .filter_map(|h| client.get_height_at_hour(date, h))
+            .collect();
+
+        assert_eq!(heights.len(), 24, "Should have 24 height values");
+
+        // Heights should vary (we expect highs and lows throughout the day)
+        let min_height = heights.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max_height = heights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+
+        // There should be significant variation (tides vary by ~2-4 meters)
+        let range = max_height - min_height;
+        assert!(
+            range > 1.0,
+            "Tide heights should vary by more than 1m throughout the day, range was {}",
+            range
+        );
     }
 }
