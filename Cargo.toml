@@ -15,3 +15,6 @@ serde_json = "1"           # JSON parsing
 chrono = { version = "0.4", features = ["serde"] }  # Date/time
 directories = "5"          # XDG paths for cache
 thiserror = "1"            # Error handling
+
+[dev-dependencies]
+tempfile = "3"             # Temporary directories for testing
