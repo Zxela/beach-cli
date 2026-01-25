@@ -5,6 +5,8 @@
 
 pub mod beach_detail;
 pub mod beach_list;
+pub mod plan_trip;
 
 pub use beach_detail::render as render_beach_detail;
 pub use beach_list::render_beach_list;
+pub use plan_trip::render as render_plan_trip;
