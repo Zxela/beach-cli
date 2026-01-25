@@ -6,6 +6,7 @@
 mod activities;
 mod app;
 mod cache;
+mod crowd;
 mod data;
 mod ui;
 
