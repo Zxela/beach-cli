@@ -6,6 +6,7 @@
 mod app;
 mod cache;
 mod data;
+mod ui;
 
 fn main() {
     println!("Vancouver Beach CLI");
