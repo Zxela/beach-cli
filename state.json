@@ -4,8 +4,20 @@
   "worktree": null,
   "feature": "vanbeach-cli",
   "created_at": "2026-01-25T16:30:00Z",
-  "phase": "planning",
-  "tasks": {},
+  "phase": "implementing",
+  "tasks": {
+    "001": { "status": "pending", "file": "docs/tasks/001-project-setup.md" },
+    "002": { "status": "pending", "file": "docs/tasks/002-data-models.md" },
+    "003": { "status": "pending", "file": "docs/tasks/003-beach-definitions.md" },
+    "004": { "status": "pending", "file": "docs/tasks/004-cache-manager.md" },
+    "005": { "status": "pending", "file": "docs/tasks/005-weather-client.md" },
+    "006": { "status": "pending", "file": "docs/tasks/006-tides-client.md" },
+    "007": { "status": "pending", "file": "docs/tasks/007-water-quality-client.md" },
+    "008": { "status": "pending", "file": "docs/tasks/008-app-state.md" },
+    "009": { "status": "pending", "file": "docs/tasks/009-beach-list-ui.md" },
+    "010": { "status": "pending", "file": "docs/tasks/010-beach-detail-ui.md" },
+    "011": { "status": "pending", "file": "docs/tasks/011-main-integration.md" }
+  },
   "current_task": null,
   "config": {
     "auto_mode": false,
