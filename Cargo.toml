@@ -16,6 +16,7 @@ chrono = { version = "0.4", features = ["serde"] }  # Date/time
 directories = "5"          # XDG paths for cache
 thiserror = "1"            # Error handling
 futures = "0.3"            # Async utilities
+clap = { version = "4", features = ["derive"] }  # CLI argument parsing
 
 [dev-dependencies]
 tempfile = "3"             # Temporary directories for testing
