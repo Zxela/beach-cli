@@ -1,0 +1,17 @@
+{
+  "session_id": "vanbeach-cli-456c5b6b",
+  "branch": "main",
+  "worktree": null,
+  "feature": "vanbeach-cli",
+  "created_at": "2026-01-25T16:30:00Z",
+  "phase": "discovery",
+  "tasks": {},
+  "current_task": null,
+  "config": {
+    "auto_mode": false,
+    "retries": {
+      "same_agent": 2,
+      "fresh_agent": 1
+    }
+  }
+}
