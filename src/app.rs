@@ -277,6 +277,42 @@ impl App {
                     KeyCode::Esc => {
                         self.state = AppState::BeachList;
                     }
+                    // Horizontal navigation (hours): h/Left and l/Right
+                    KeyCode::Char('h') | KeyCode::Left => {
+                        self.move_plan_cursor_left();
+                    }
+                    KeyCode::Char('l') | KeyCode::Right => {
+                        self.move_plan_cursor_right();
+                    }
+                    // Vertical navigation (beaches): k/Up and j/Down
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        self.move_plan_cursor_up();
+                    }
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        self.move_plan_cursor_down();
+                    }
+                    // Activity selection (1-5)
+                    KeyCode::Char('1') => {
+                        self.current_activity = Some(Activity::Swimming);
+                    }
+                    KeyCode::Char('2') => {
+                        self.current_activity = Some(Activity::Sunbathing);
+                    }
+                    KeyCode::Char('3') => {
+                        self.current_activity = Some(Activity::Sailing);
+                    }
+                    KeyCode::Char('4') => {
+                        self.current_activity = Some(Activity::Sunset);
+                    }
+                    KeyCode::Char('5') => {
+                        self.current_activity = Some(Activity::Peace);
+                    }
+                    // Enter navigates to beach detail
+                    KeyCode::Enter => {
+                        if let Some(beach) = all_beaches().get(self.plan_cursor.0) {
+                            self.state = AppState::BeachDetail(beach.id.to_string());
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -303,6 +339,50 @@ impl App {
             return;
         }
         self.selected_index = (self.selected_index + 1) % count;
+    }
+
+    /// Moves the plan cursor up (to previous beach), wrapping at top
+    fn move_plan_cursor_up(&mut self) {
+        let count = self.beach_count();
+        if count == 0 {
+            return;
+        }
+        if self.plan_cursor.0 == 0 {
+            self.plan_cursor.0 = count - 1;
+        } else {
+            self.plan_cursor.0 -= 1;
+        }
+    }
+
+    /// Moves the plan cursor down (to next beach), wrapping at bottom
+    fn move_plan_cursor_down(&mut self) {
+        let count = self.beach_count();
+        if count == 0 {
+            return;
+        }
+        self.plan_cursor.0 = (self.plan_cursor.0 + 1) % count;
+    }
+
+    /// Moves the plan cursor left (to previous hour), wrapping at start
+    fn move_plan_cursor_left(&mut self) {
+        let hour_count = (self.plan_time_range.1 - self.plan_time_range.0 + 1) as usize;
+        if hour_count == 0 {
+            return;
+        }
+        if self.plan_cursor.1 == 0 {
+            self.plan_cursor.1 = hour_count - 1;
+        } else {
+            self.plan_cursor.1 -= 1;
+        }
+    }
+
+    /// Moves the plan cursor right (to next hour), wrapping at end
+    fn move_plan_cursor_right(&mut self) {
+        let hour_count = (self.plan_time_range.1 - self.plan_time_range.0 + 1) as usize;
+        if hour_count == 0 {
+            return;
+        }
+        self.plan_cursor.1 = (self.plan_cursor.1 + 1) % hour_count;
     }
 
     /// Gets the beach conditions for a specific beach ID
@@ -737,5 +817,159 @@ mod tests {
             AppState::BeachDetail("test2".to_string())
         );
         assert_ne!(AppState::Loading, AppState::BeachList);
+    }
+
+    // ========================================================================
+    // PlanTrip Navigation Tests (Task 020)
+    // ========================================================================
+
+    #[test]
+    fn test_plan_trip_cursor_down_moves_to_next_beach() {
+        let mut app = App::new();
+        app.state = AppState::PlanTrip;
+        assert_eq!(app.plan_cursor.0, 0);
+
+        app.handle_key(key_event(KeyCode::Down));
+        assert_eq!(app.plan_cursor.0, 1);
+
+        app.handle_key(key_event(KeyCode::Char('j')));
+        assert_eq!(app.plan_cursor.0, 2);
+    }
+
+    #[test]
+    fn test_plan_trip_cursor_up_moves_to_previous_beach() {
+        let mut app = App::new();
+        app.state = AppState::PlanTrip;
+        app.plan_cursor.0 = 2;
+
+        app.handle_key(key_event(KeyCode::Up));
+        assert_eq!(app.plan_cursor.0, 1);
+
+        app.handle_key(key_event(KeyCode::Char('k')));
+        assert_eq!(app.plan_cursor.0, 0);
+    }
+
+    #[test]
+    fn test_plan_trip_cursor_right_moves_to_next_hour() {
+        let mut app = App::new();
+        app.state = AppState::PlanTrip;
+        assert_eq!(app.plan_cursor.1, 0);
+
+        app.handle_key(key_event(KeyCode::Right));
+        assert_eq!(app.plan_cursor.1, 1);
+
+        app.handle_key(key_event(KeyCode::Char('l')));
+        assert_eq!(app.plan_cursor.1, 2);
+    }
+
+    #[test]
+    fn test_plan_trip_cursor_left_moves_to_previous_hour() {
+        let mut app = App::new();
+        app.state = AppState::PlanTrip;
+        app.plan_cursor.1 = 2;
+
+        app.handle_key(key_event(KeyCode::Left));
+        assert_eq!(app.plan_cursor.1, 1);
+
+        app.handle_key(key_event(KeyCode::Char('h')));
+        assert_eq!(app.plan_cursor.1, 0);
+    }
+
+    #[test]
+    fn test_plan_trip_cursor_wraps_at_bottom() {
+        let mut app = App::new();
+        app.state = AppState::PlanTrip;
+        let count = app.beach_count();
+        app.plan_cursor.0 = count - 1;
+
+        app.handle_key(key_event(KeyCode::Down));
+        assert_eq!(app.plan_cursor.0, 0, "Should wrap to top");
+    }
+
+    #[test]
+    fn test_plan_trip_cursor_wraps_at_top() {
+        let mut app = App::new();
+        app.state = AppState::PlanTrip;
+        app.plan_cursor.0 = 0;
+
+        app.handle_key(key_event(KeyCode::Up));
+        let count = app.beach_count();
+        assert_eq!(app.plan_cursor.0, count - 1, "Should wrap to bottom");
+    }
+
+    #[test]
+    fn test_plan_trip_cursor_wraps_at_last_hour() {
+        let mut app = App::new();
+        app.state = AppState::PlanTrip;
+        // plan_time_range is (6, 21), so 16 hours (indices 0-15)
+        let hour_count = (app.plan_time_range.1 - app.plan_time_range.0 + 1) as usize;
+        app.plan_cursor.1 = hour_count - 1;
+
+        app.handle_key(key_event(KeyCode::Right));
+        assert_eq!(app.plan_cursor.1, 0, "Should wrap to first hour");
+    }
+
+    #[test]
+    fn test_plan_trip_cursor_wraps_at_first_hour() {
+        let mut app = App::new();
+        app.state = AppState::PlanTrip;
+        app.plan_cursor.1 = 0;
+
+        app.handle_key(key_event(KeyCode::Left));
+        let hour_count = (app.plan_time_range.1 - app.plan_time_range.0 + 1) as usize;
+        assert_eq!(app.plan_cursor.1, hour_count - 1, "Should wrap to last hour");
+    }
+
+    #[test]
+    fn test_plan_trip_activity_selection() {
+        let mut app = App::new();
+        app.state = AppState::PlanTrip;
+
+        app.handle_key(key_event(KeyCode::Char('1')));
+        assert_eq!(app.current_activity, Some(Activity::Swimming));
+
+        app.handle_key(key_event(KeyCode::Char('2')));
+        assert_eq!(app.current_activity, Some(Activity::Sunbathing));
+
+        app.handle_key(key_event(KeyCode::Char('3')));
+        assert_eq!(app.current_activity, Some(Activity::Sailing));
+
+        app.handle_key(key_event(KeyCode::Char('4')));
+        assert_eq!(app.current_activity, Some(Activity::Sunset));
+
+        app.handle_key(key_event(KeyCode::Char('5')));
+        assert_eq!(app.current_activity, Some(Activity::Peace));
+    }
+
+    #[test]
+    fn test_plan_trip_enter_navigates_to_beach_detail() {
+        let mut app = App::new();
+        app.state = AppState::PlanTrip;
+        app.plan_cursor.0 = 0; // First beach (kitsilano)
+
+        app.handle_key(key_event(KeyCode::Enter));
+
+        match &app.state {
+            AppState::BeachDetail(id) => {
+                assert_eq!(id, "kitsilano");
+            }
+            _ => panic!("Expected BeachDetail state"),
+        }
+    }
+
+    #[test]
+    fn test_plan_trip_enter_navigates_to_selected_beach() {
+        let mut app = App::new();
+        app.state = AppState::PlanTrip;
+        app.plan_cursor.0 = 1; // Second beach (english-bay)
+
+        app.handle_key(key_event(KeyCode::Enter));
+
+        match &app.state {
+            AppState::BeachDetail(id) => {
+                assert_eq!(id, "english-bay");
+            }
+            _ => panic!("Expected BeachDetail state"),
+        }
     }
 }
