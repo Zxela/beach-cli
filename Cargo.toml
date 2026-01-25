@@ -1,0 +1,17 @@
+[package]
+name = "vanbeach"
+version = "0.1.0"
+edition = "2021"
+description = "A CLI tool to view Vancouver beach conditions including weather, tides, and water quality"
+authors = ["Vancouver Beach CLI"]
+
+[dependencies]
+ratatui = "0.28"           # TUI framework
+crossterm = "0.28"         # Terminal backend
+tokio = { version = "1", features = ["full"] }  # Async runtime
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }  # HTTP client
+serde = { version = "1", features = ["derive"] }    # Serialization
+serde_json = "1"           # JSON parsing
+chrono = { version = "0.4", features = ["serde"] }  # Date/time
+directories = "5"          # XDG paths for cache
+thiserror = "1"            # Error handling
