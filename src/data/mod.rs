@@ -3,22 +3,34 @@
 //! This module contains all the data types used throughout the application
 //! for representing beaches, weather, tides, and water quality information.
 
+pub mod beach;
+
+pub use beach::{all_beaches, get_beach_by_id, BEACHES};
+
 use chrono::{DateTime, Local, NaiveDate, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Represents a beach location in Vancouver
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Uses `&'static str` for string fields to allow static initialization
+/// of the BEACHES array. For runtime-created Beach instances, use string
+/// literals or leak the strings.
+///
+/// Note: This struct only implements `Serialize` (not `Deserialize`) because
+/// the static string references cannot be safely deserialized. Use `get_beach_by_id`
+/// to look up beaches from deserialized beach IDs.
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct Beach {
     /// Unique identifier for the beach
-    pub id: String,
+    pub id: &'static str,
     /// Human-readable name of the beach
-    pub name: String,
+    pub name: &'static str,
     /// Latitude coordinate
     pub latitude: f64,
     /// Longitude coordinate
     pub longitude: f64,
     /// Optional identifier for water quality monitoring station
-    pub water_quality_id: Option<String>,
+    pub water_quality_id: Option<&'static str>,
 }
 
 /// Weather conditions at a specific time
@@ -119,7 +131,10 @@ pub enum WaterStatus {
 }
 
 /// Combined beach conditions including all available data
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// Note: This struct only implements `Serialize` (not `Deserialize`) because
+/// the Beach struct uses static string references.
+#[derive(Debug, Clone, Serialize)]
 pub struct BeachConditions {
     /// The beach this data is for
     pub beach: Beach,
@@ -138,18 +153,18 @@ mod tests {
     #[test]
     fn test_beach_creation() {
         let beach = Beach {
-            id: "kitsilano".to_string(),
-            name: "Kitsilano Beach".to_string(),
+            id: "kitsilano",
+            name: "Kitsilano Beach",
             latitude: 49.2743,
             longitude: -123.1544,
-            water_quality_id: Some("kits-001".to_string()),
+            water_quality_id: Some("kits-001"),
         };
 
         assert_eq!(beach.id, "kitsilano");
         assert_eq!(beach.name, "Kitsilano Beach");
         assert!((beach.latitude - 49.2743).abs() < 0.0001);
         assert!((beach.longitude - (-123.1544)).abs() < 0.0001);
-        assert_eq!(beach.water_quality_id, Some("kits-001".to_string()));
+        assert_eq!(beach.water_quality_id, Some("kits-001"));
     }
 
     #[test]
@@ -291,8 +306,8 @@ mod tests {
     #[test]
     fn test_beach_conditions_creation() {
         let beach = Beach {
-            id: "english-bay".to_string(),
-            name: "English Bay Beach".to_string(),
+            id: "english-bay",
+            name: "English Bay Beach",
             latitude: 49.2867,
             longitude: -123.1422,
             water_quality_id: None,
