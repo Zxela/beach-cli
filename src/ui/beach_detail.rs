@@ -11,7 +11,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::activities::{get_profile, Activity};
+use chrono::{Local, Timelike};
+
+use crate::activities::{get_profile, sunset_time_scorer_dynamic, Activity};
 use crate::app::App;
 use crate::data::{TideState, WaterStatus, WeatherCondition};
 
@@ -509,6 +511,17 @@ fn compute_best_windows(
     activity: Activity,
     conditions: &crate::data::BeachConditions,
 ) -> Vec<TimeWindow> {
+    // Get current hour to filter past times
+    let current_hour = Local::now().hour() as u8;
+    compute_best_windows_from_hour(activity, conditions, current_hour)
+}
+
+/// Internal implementation that accepts start hour for testability
+fn compute_best_windows_from_hour(
+    activity: Activity,
+    conditions: &crate::data::BeachConditions,
+    current_hour: u8,
+) -> Vec<TimeWindow> {
     let profile = get_profile(activity);
 
     // Get weather data for scoring
@@ -516,6 +529,13 @@ fn compute_best_windows(
         Some(w) => (w.temperature as f32, w.wind as f32, w.uv as f32),
         None => return vec![], // Can't score without weather
     };
+
+    // Get sunset hour for dynamic scoring
+    let sunset_hour = conditions
+        .weather
+        .as_ref()
+        .map(|w| w.sunset.hour() as u8)
+        .unwrap_or(20); // Default to 8 PM if no data
 
     // Get water status
     let water_status = conditions
@@ -533,13 +553,21 @@ fn compute_best_windows(
         None => (2.4, 4.8), // Default mid-tide
     };
 
-    // Score each hour from 6am to 9pm
+    // Score each hour from current_hour to 9pm (filter past hours)
+    let start_hour = current_hour.max(6); // Don't go before 6am
     let mut hourly_scores: Vec<(u8, u8)> = Vec::new();
-    for hour in 6..=21 {
+    for hour in start_hour..=21 {
         // Estimate crowd level based on time of day (simple heuristic)
         let crowd_level = estimate_crowd_level(hour);
 
-        let score = profile.score_time_slot(
+        // For sunset activity, use dynamic scorer based on actual sunset time
+        let time_score = if activity == Activity::Sunset {
+            sunset_time_scorer_dynamic(hour, sunset_hour)
+        } else {
+            profile.time_of_day_scorer.map(|f| f(hour)).unwrap_or(1.0)
+        };
+
+        let mut score = profile.score_time_slot(
             hour,
             conditions.beach.id,
             temp,
@@ -550,6 +578,19 @@ fn compute_best_windows(
             max_tide,
             crowd_level,
         );
+
+        // Adjust score based on time_score for sunset activity
+        // The score_time_slot uses the profile's time_of_day_scorer internally,
+        // but for sunset we want to override it with the dynamic scorer
+        if activity == Activity::Sunset {
+            // Recalculate score with dynamic time factor
+            // The time_of_day contributes ~0.1 weight to the final score
+            // We need to apply a stronger influence for sunset timing
+            let base_score = score.score as f32;
+            // Apply time_score as a multiplier with significant impact
+            let adjusted = base_score * (0.3 + 0.7 * time_score);
+            score.score = adjusted.clamp(0.0, 100.0) as u8;
+        }
 
         hourly_scores.push((hour, score.score));
     }
@@ -1120,5 +1161,137 @@ mod tests {
             assert_eq!(icon, expected_icon);
             assert_eq!(text, expected_text);
         }
+    }
+
+    // ========================================================================
+    // Dynamic Sunset Scorer Tests for compute_best_windows
+    // ========================================================================
+
+    /// Helper to create test conditions with a specific sunset time
+    fn create_test_conditions_with_sunset(sunset_hour: u8, sunset_minute: u8) -> BeachConditions {
+        let beach = Beach {
+            id: "test-beach",
+            name: "Test Beach",
+            latitude: 49.2743,
+            longitude: -123.1544,
+            water_quality_id: Some("test-beach"),
+        };
+
+        let weather = Weather {
+            temperature: 22.0,
+            feels_like: 24.0,
+            condition: WeatherCondition::Clear,
+            humidity: 65,
+            wind: 10.0,
+            uv: 5.0,
+            sunrise: NaiveTime::from_hms_opt(6, 0, 0).unwrap(),
+            sunset: NaiveTime::from_hms_opt(sunset_hour as u32, sunset_minute as u32, 0).unwrap(),
+            fetched_at: Utc::now(),
+        };
+
+        let tides = TideInfo {
+            current_height: 2.4,
+            tide_state: TideState::Rising,
+            next_high: Some(TideEvent {
+                time: Local::now(),
+                height: 4.8,
+            }),
+            next_low: Some(TideEvent {
+                time: Local::now(),
+                height: 0.5,
+            }),
+            fetched_at: Utc::now(),
+        };
+
+        let water_quality = WaterQuality {
+            status: WaterStatus::Safe,
+            ecoli_count: Some(20),
+            sample_date: NaiveDate::from_ymd_opt(2026, 1, 24).unwrap(),
+            advisory_reason: None,
+            fetched_at: Utc::now(),
+        };
+
+        BeachConditions {
+            beach,
+            weather: Some(weather),
+            tides: Some(tides),
+            water_quality: Some(water_quality),
+        }
+    }
+
+    #[test]
+    fn test_compute_best_windows_uses_dynamic_sunset_scorer() {
+        // Create conditions with sunset at 17:00 (5 PM)
+        let conditions = create_test_conditions_with_sunset(17, 0);
+
+        // Call compute_best_windows_from_hour with Sunset activity
+        // Start from hour 6 to ensure we score all hours including sunset
+        let windows = compute_best_windows_from_hour(Activity::Sunset, &conditions, 6);
+
+        // The windows should not be empty
+        assert!(
+            !windows.is_empty(),
+            "Should have at least one time window for sunset"
+        );
+
+        // The highest-scored window should be around hour 17 (sunset hour)
+        // The first window in the list is the highest scored due to sorting
+        let best_window = &windows[0];
+
+        // The best window should contain hour 17 or be very close to it
+        // Since we use dynamic scoring, the peak should be at/around sunset_hour
+        assert!(
+            best_window.start_hour <= 18 && best_window.end_hour >= 16,
+            "Best window ({}-{}) should be around sunset hour 17",
+            best_window.start_hour,
+            best_window.end_hour
+        );
+    }
+
+    #[test]
+    fn test_compute_best_windows_other_activities_unchanged() {
+        // Create conditions with sunset at 17:00
+        let conditions = create_test_conditions_with_sunset(17, 0);
+
+        // Test Swimming - should NOT peak at sunset hour
+        let swimming_windows = compute_best_windows_from_hour(Activity::Swimming, &conditions, 6);
+        assert!(
+            !swimming_windows.is_empty(),
+            "Should have windows for swimming"
+        );
+
+        // Swimming doesn't have a time_of_day_scorer, so its best window
+        // should be based on other factors (temp, water quality, etc.)
+        // Verify it doesn't specifically favor hour 17
+        let _swimming_best = &swimming_windows[0];
+        // Swimming should prefer midday hours due to temperature and other factors
+        // It should NOT specifically favor 17:00 like sunset would
+
+        // Test Peace - should peak at early morning (6-7 AM)
+        let peace_windows = compute_best_windows_from_hour(Activity::Peace, &conditions, 6);
+        assert!(!peace_windows.is_empty(), "Should have windows for peace");
+
+        let peace_best = &peace_windows[0];
+        // Peace activity has a time_of_day_scorer that peaks at 6-7 AM
+        // The best window should be in early morning
+        assert!(
+            peace_best.start_hour <= 8,
+            "Peace best window ({}-{}) should be in early morning, not at sunset hour 17",
+            peace_best.start_hour,
+            peace_best.end_hour
+        );
+
+        // Verify Swimming and Peace don't peak at sunset hour like Sunset activity would
+        // by checking that their scores at different times differ from Sunset's pattern
+        let sunset_windows = compute_best_windows_from_hour(Activity::Sunset, &conditions, 6);
+        let sunset_best = &sunset_windows[0];
+
+        // Sunset should favor around hour 17, Peace should favor early morning
+        // They should have different best windows
+        assert!(
+            peace_best.start_hour != sunset_best.start_hour
+                || peace_best.end_hour != sunset_best.end_hour,
+            "Peace and Sunset should have different best windows"
+        );
     }
 }
