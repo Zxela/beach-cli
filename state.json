@@ -4,8 +4,12 @@
   "worktree": "../weather-cli-create-fix-sunset-suggestions-d3cd34d8",
   "feature": "fix-sunset-suggestions",
   "created_at": "2026-01-25T23:00:00Z",
-  "phase": "planning",
-  "tasks": {},
+  "phase": "implementing",
+  "tasks": {
+    "001": { "status": "pending", "file": "docs/tasks/001-dynamic-sunset-scorer.md" },
+    "002": { "status": "pending", "file": "docs/tasks/002-filter-past-hours.md" },
+    "003": { "status": "pending", "file": "docs/tasks/003-best-times-passed-message.md" }
+  },
   "current_task": null,
   "config": {
     "auto_mode": false,
