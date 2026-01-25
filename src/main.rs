@@ -48,7 +48,37 @@ fn render_ui(frame: &mut ratatui::Frame, app: &App) {
         AppState::BeachDetail(beach_id) => {
             ui::render_beach_detail(frame, app, beach_id);
         }
+        AppState::PlanTrip => {
+            // Placeholder for PlanTrip screen - will be implemented in a separate task
+            render_plan_trip_placeholder(frame);
+        }
     }
+}
+
+/// Renders a placeholder for the PlanTrip screen
+fn render_plan_trip_placeholder(frame: &mut ratatui::Frame) {
+    use ratatui::{
+        layout::{Alignment, Constraint, Direction, Layout},
+        style::{Color, Style},
+        widgets::Paragraph,
+    };
+
+    let area = frame.area();
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(45),
+            Constraint::Length(3),
+            Constraint::Percentage(45),
+        ])
+        .split(area);
+
+    let text = Paragraph::new("Plan Trip View (Coming Soon) - Press Esc to go back")
+        .style(Style::default().fg(Color::Yellow))
+        .alignment(Alignment::Center);
+
+    frame.render_widget(text, chunks[1]);
 }
 
 /// Renders a loading message while data is being fetched

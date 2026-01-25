@@ -6,6 +6,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use std::collections::HashMap;
 
+use crate::activities::Activity;
 use crate::cache::CacheManager;
 use crate::data::{
     all_beaches, get_beach_by_id, Beach, BeachConditions, TidesClient, WaterQuality,
@@ -21,6 +22,8 @@ pub enum AppState {
     BeachList,
     /// Detail view for a specific beach
     BeachDetail(String),
+    /// Plan trip view showing beach/hour grid for activity optimization
+    PlanTrip,
 }
 
 /// Main application struct managing state and data
@@ -33,6 +36,12 @@ pub struct App {
     pub beach_conditions: HashMap<String, BeachConditions>,
     /// Flag indicating the application should quit
     pub should_quit: bool,
+    /// Currently selected activity for scoring/filtering
+    pub current_activity: Option<Activity>,
+    /// Cursor position in PlanTrip grid (beach_index, hour_index)
+    pub plan_cursor: (usize, usize),
+    /// Visible hour range in PlanTrip screen (start_hour, end_hour), default 6am-9pm
+    pub plan_time_range: (u8, u8),
     /// Weather API client
     weather_client: WeatherClient,
     /// Tides API client
@@ -50,6 +59,9 @@ impl App {
             selected_index: 0,
             beach_conditions: HashMap::new(),
             should_quit: false,
+            current_activity: None,
+            plan_cursor: (0, 0),
+            plan_time_range: (6, 21),
             weather_client: WeatherClient::new(),
             tides_client: TidesClient::new(cache.clone()),
             water_quality_client: cache
@@ -70,6 +82,9 @@ impl App {
             selected_index: 0,
             beach_conditions: HashMap::new(),
             should_quit: false,
+            current_activity: None,
+            plan_cursor: (0, 0),
+            plan_time_range: (6, 21),
             weather_client,
             tides_client,
             water_quality_client,
@@ -191,7 +206,10 @@ impl App {
     /// - `Up`/`k`: Move selection up in list
     /// - `Down`/`j`: Move selection down in list
     /// - `Enter`: Select current beach (go to detail view)
+    /// - `p`: Open PlanTrip view (from BeachList or BeachDetail)
+    /// - `1`-`5`: Set current activity (in BeachDetail)
     /// - `Esc` (in BeachDetail): Go back to list view
+    /// - `Esc` (in PlanTrip): Go back to list view
     pub fn handle_key(&mut self, key_event: KeyEvent) {
         match self.state {
             AppState::Loading => {
@@ -216,10 +234,42 @@ impl App {
                             self.state = AppState::BeachDetail(beach.id.to_string());
                         }
                     }
+                    KeyCode::Char('p') => {
+                        self.state = AppState::PlanTrip;
+                    }
                     _ => {}
                 }
             }
             AppState::BeachDetail(_) => {
+                match key_event.code {
+                    KeyCode::Char('q') => {
+                        self.should_quit = true;
+                    }
+                    KeyCode::Esc => {
+                        self.state = AppState::BeachList;
+                    }
+                    KeyCode::Char('p') => {
+                        self.state = AppState::PlanTrip;
+                    }
+                    KeyCode::Char('1') => {
+                        self.current_activity = Some(Activity::Swimming);
+                    }
+                    KeyCode::Char('2') => {
+                        self.current_activity = Some(Activity::Sunbathing);
+                    }
+                    KeyCode::Char('3') => {
+                        self.current_activity = Some(Activity::Sailing);
+                    }
+                    KeyCode::Char('4') => {
+                        self.current_activity = Some(Activity::Sunset);
+                    }
+                    KeyCode::Char('5') => {
+                        self.current_activity = Some(Activity::Peace);
+                    }
+                    _ => {}
+                }
+            }
+            AppState::PlanTrip => {
                 match key_event.code {
                     KeyCode::Char('q') => {
                         self.should_quit = true;
@@ -277,12 +327,195 @@ impl Default for App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::activities::Activity;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     /// Helper to create a KeyEvent for testing
     fn key_event(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
+
+    // ========================================================================
+    // PlanTrip State and Activity Tests (Task 017)
+    // ========================================================================
+
+    #[test]
+    fn test_app_state_plan_trip_variant_exists() {
+        // AppState::PlanTrip should exist as a variant
+        let state = AppState::PlanTrip;
+        assert_eq!(state, AppState::PlanTrip);
+    }
+
+    #[test]
+    fn test_app_has_current_activity_field() {
+        let app = App::new();
+        // current_activity should be None initially
+        assert!(app.current_activity.is_none());
+    }
+
+    #[test]
+    fn test_app_has_plan_cursor_field() {
+        let app = App::new();
+        // plan_cursor should be (0, 0) initially - (beach_index, hour_index)
+        assert_eq!(app.plan_cursor, (0, 0));
+    }
+
+    #[test]
+    fn test_app_has_plan_time_range_field() {
+        let app = App::new();
+        // plan_time_range should be (6, 21) by default - 6am to 9pm
+        assert_eq!(app.plan_time_range, (6, 21));
+    }
+
+    #[test]
+    fn test_key_p_in_beach_list_transitions_to_plan_trip() {
+        let mut app = App::new();
+        app.state = AppState::BeachList;
+
+        app.handle_key(key_event(KeyCode::Char('p')));
+
+        assert_eq!(app.state, AppState::PlanTrip);
+    }
+
+    #[test]
+    fn test_key_p_in_beach_detail_transitions_to_plan_trip() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+
+        app.handle_key(key_event(KeyCode::Char('p')));
+
+        assert_eq!(app.state, AppState::PlanTrip);
+    }
+
+    #[test]
+    fn test_key_1_in_beach_detail_sets_swimming_activity() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+
+        app.handle_key(key_event(KeyCode::Char('1')));
+
+        assert_eq!(app.current_activity, Some(Activity::Swimming));
+    }
+
+    #[test]
+    fn test_key_2_in_beach_detail_sets_sunbathing_activity() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+
+        app.handle_key(key_event(KeyCode::Char('2')));
+
+        assert_eq!(app.current_activity, Some(Activity::Sunbathing));
+    }
+
+    #[test]
+    fn test_key_3_in_beach_detail_sets_sailing_activity() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+
+        app.handle_key(key_event(KeyCode::Char('3')));
+
+        assert_eq!(app.current_activity, Some(Activity::Sailing));
+    }
+
+    #[test]
+    fn test_key_4_in_beach_detail_sets_sunset_activity() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+
+        app.handle_key(key_event(KeyCode::Char('4')));
+
+        assert_eq!(app.current_activity, Some(Activity::Sunset));
+    }
+
+    #[test]
+    fn test_key_5_in_beach_detail_sets_peace_activity() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+
+        app.handle_key(key_event(KeyCode::Char('5')));
+
+        assert_eq!(app.current_activity, Some(Activity::Peace));
+    }
+
+    #[test]
+    fn test_esc_in_plan_trip_returns_to_beach_list() {
+        let mut app = App::new();
+        app.state = AppState::PlanTrip;
+
+        app.handle_key(key_event(KeyCode::Esc));
+
+        assert_eq!(app.state, AppState::BeachList);
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn test_activity_persists_when_navigating_to_plan_trip() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+
+        // Set activity
+        app.handle_key(key_event(KeyCode::Char('1')));
+        assert_eq!(app.current_activity, Some(Activity::Swimming));
+
+        // Navigate to PlanTrip
+        app.handle_key(key_event(KeyCode::Char('p')));
+        assert_eq!(app.state, AppState::PlanTrip);
+
+        // Activity should still be set
+        assert_eq!(app.current_activity, Some(Activity::Swimming));
+    }
+
+    #[test]
+    fn test_activity_persists_when_returning_from_plan_trip() {
+        let mut app = App::new();
+        app.current_activity = Some(Activity::Sailing);
+        app.state = AppState::PlanTrip;
+
+        // Go back to beach list
+        app.handle_key(key_event(KeyCode::Esc));
+
+        // Activity should still be set
+        assert_eq!(app.current_activity, Some(Activity::Sailing));
+    }
+
+    #[test]
+    fn test_activity_persists_when_navigating_between_beaches() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+        app.current_activity = Some(Activity::Sunbathing);
+
+        // Go back to list
+        app.handle_key(key_event(KeyCode::Esc));
+        assert_eq!(app.current_activity, Some(Activity::Sunbathing));
+
+        // Select another beach
+        app.handle_key(key_event(KeyCode::Down));
+        app.handle_key(key_event(KeyCode::Enter));
+
+        // Activity should persist
+        assert_eq!(app.current_activity, Some(Activity::Sunbathing));
+    }
+
+    #[test]
+    fn test_q_quits_from_plan_trip() {
+        let mut app = App::new();
+        app.state = AppState::PlanTrip;
+        assert!(!app.should_quit);
+
+        app.handle_key(key_event(KeyCode::Char('q')));
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn test_app_state_plan_trip_equality() {
+        assert_eq!(AppState::PlanTrip, AppState::PlanTrip);
+        assert_ne!(AppState::PlanTrip, AppState::BeachList);
+        assert_ne!(AppState::PlanTrip, AppState::Loading);
+    }
+
+    // ========================================================================
+    // Original Tests
+    // ========================================================================
 
     #[test]
     fn test_initial_state_is_loading() {
