@@ -3,6 +3,8 @@
 //! A terminal UI application that displays weather, tides, and water quality
 //! information for beaches in Vancouver, BC.
 
+mod data;
+
 fn main() {
     println!("Vancouver Beach CLI");
     println!("-------------------");
