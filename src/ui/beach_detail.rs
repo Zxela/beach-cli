@@ -11,6 +11,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::activities::{get_profile, Activity};
 use crate::app::App;
 use crate::data::{TideState, WaterStatus, WeatherCondition};
 
@@ -36,6 +37,14 @@ mod colors {
     pub const RISING: Color = Color::Cyan;
     /// Falling tide indicator
     pub const FALLING: Color = Color::Blue;
+    /// Selected activity indicator
+    pub const SELECTED: Color = Color::Yellow;
+    /// High score (gold medal)
+    pub const GOLD: Color = Color::Yellow;
+    /// Second place (silver medal)
+    pub const SILVER: Color = Color::Gray;
+    /// Third place (bronze medal)
+    pub const BRONZE: Color = Color::Rgb(205, 127, 50);
 }
 
 /// Renders the beach detail screen
@@ -72,27 +81,54 @@ pub fn render(frame: &mut Frame, app: &App, beach_id: &str) {
     let inner_area = main_block.inner(area);
     frame.render_widget(main_block, area);
 
-    // Create layout: Weather/Tides row, Water Quality row, Help row
+    // Determine if we need to show the Best Window section
+    let show_best_window = app.current_activity.is_some();
+
+    // Create layout: Activity selector, Weather/Tides row, Water Quality row,
+    // Best Window (if activity selected), Help row
+    let constraints = if show_best_window {
+        vec![
+            Constraint::Length(1),  // Activity selector row
+            Constraint::Min(6),     // Weather and Tides section
+            Constraint::Length(4),  // Water Quality section
+            Constraint::Length(6),  // Best Window Today section
+            Constraint::Length(2),  // Help text
+        ]
+    } else {
+        vec![
+            Constraint::Length(1),  // Activity selector row
+            Constraint::Min(6),     // Weather and Tides section
+            Constraint::Length(4),  // Water Quality section
+            Constraint::Length(2),  // Help text
+        ]
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(6),    // Weather and Tides section
-            Constraint::Length(4), // Water Quality section
-            Constraint::Length(2), // Help text
-        ])
+        .constraints(constraints)
         .split(inner_area);
 
-    // Split the top section into Weather and Tides columns
+    // Render activity selector at the top
+    render_activity_selector(frame, chunks[0], app.current_activity);
+
+    // Split the weather/tides section into Weather and Tides columns
     let top_columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(chunks[0]);
+        .split(chunks[1]);
 
     // Render sections
     render_weather_section(frame, top_columns[0], conditions.weather.as_ref());
     render_tides_section(frame, top_columns[1], conditions.tides.as_ref());
-    render_water_quality_section(frame, chunks[1], conditions.water_quality.as_ref());
-    render_help_text(frame, chunks[2]);
+    render_water_quality_section(frame, chunks[2], conditions.water_quality.as_ref());
+
+    // Render Best Window Today section if activity is selected
+    if show_best_window {
+        render_best_window_section(frame, chunks[3], app, beach_id);
+        render_help_text(frame, chunks[4]);
+    } else {
+        render_help_text(frame, chunks[3]);
+    }
 }
 
 /// Renders the weather section
@@ -335,10 +371,349 @@ fn render_water_quality_section(
     frame.render_widget(paragraph, area);
 }
 
+/// Renders the activity selector row
+/// Shows all activities with filled (selected) or empty (unselected) indicators
+fn render_activity_selector(frame: &mut Frame, area: Rect, current_activity: Option<Activity>) {
+    let activities = Activity::all();
+    let mut spans = vec![Span::styled("Activity: ", Style::default().fg(colors::SECONDARY))];
+
+    for (i, activity) in activities.iter().enumerate() {
+        let is_selected = current_activity == Some(*activity);
+        let indicator = if is_selected { "\u{25CF}" } else { "\u{25CB}" }; // ● or ○
+        let label = match activity {
+            Activity::Swimming => "Swimming",
+            Activity::Sunbathing => "Sunbathing",
+            Activity::Sailing => "Sailing",
+            Activity::Sunset => "Sunset",
+            Activity::Peace => "Peace",
+        };
+
+        let style = if is_selected {
+            Style::default().fg(colors::SELECTED).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(colors::SECONDARY)
+        };
+
+        spans.push(Span::raw("["));
+        spans.push(Span::styled(indicator, style));
+        spans.push(Span::styled(label, style));
+        spans.push(Span::raw("]"));
+
+        if i < activities.len() - 1 {
+            spans.push(Span::raw(" "));
+        }
+    }
+
+    let line = Line::from(spans);
+    let paragraph = Paragraph::new(vec![line]);
+    frame.render_widget(paragraph, area);
+}
+
+/// Represents a scored time window for display
+struct TimeWindow {
+    start_hour: u8,
+    end_hour: u8,
+    score: u8,
+    reason: String,
+}
+
+/// Renders the "Best Window Today" section showing top 3 time slots for the selected activity
+fn render_best_window_section(frame: &mut Frame, area: Rect, app: &App, beach_id: &str) {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "BEST WINDOW TODAY",
+            Style::default()
+                .fg(colors::HEADER)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}",
+            Style::default().fg(colors::SECONDARY),
+        )),
+    ];
+
+    // Get the current activity
+    let activity = match app.current_activity {
+        Some(a) => a,
+        None => {
+            lines.push(Line::from(Span::styled(
+                "Select an activity (1-5) to see best times",
+                Style::default().fg(colors::SECONDARY),
+            )));
+            let paragraph = Paragraph::new(lines);
+            frame.render_widget(paragraph, area);
+            return;
+        }
+    };
+
+    // Get beach conditions for scoring
+    let conditions = match app.get_conditions(beach_id) {
+        Some(c) => c,
+        None => {
+            lines.push(Line::from(Span::styled(
+                "Weather data unavailable for scoring",
+                Style::default().fg(colors::UNKNOWN),
+            )));
+            let paragraph = Paragraph::new(lines);
+            frame.render_widget(paragraph, area);
+            return;
+        }
+    };
+
+    // Compute time windows
+    let windows = compute_best_windows(activity, conditions);
+
+    if windows.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "No suitable time windows found",
+            Style::default().fg(colors::SECONDARY),
+        )));
+    } else {
+        let medals = [
+            ("\u{1F947}", colors::GOLD),    // 🥇
+            ("\u{1F948}", colors::SILVER),  // 🥈
+            ("\u{1F949}", colors::BRONZE),  // 🥉
+        ];
+
+        for (i, window) in windows.iter().take(3).enumerate() {
+            let (medal, color) = medals.get(i).unwrap_or(&("  ", colors::SECONDARY));
+            let time_range = format!(
+                "{} - {}",
+                format_hour(window.start_hour),
+                format_hour(window.end_hour)
+            );
+
+            lines.push(Line::from(vec![
+                Span::raw(format!("{} ", medal)),
+                Span::styled(
+                    format!("{:<18}", time_range),
+                    Style::default().fg(colors::PRIMARY),
+                ),
+                Span::styled("Score: ", Style::default().fg(colors::SECONDARY)),
+                Span::styled(
+                    format!("{}/100", window.score),
+                    Style::default().fg(*color).add_modifier(Modifier::BOLD),
+                ),
+            ]));
+
+            lines.push(Line::from(Span::styled(
+                format!("   {}", window.reason),
+                Style::default().fg(colors::SECONDARY),
+            )));
+        }
+    }
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
+}
+
+/// Computes the best time windows for a given activity and beach conditions
+fn compute_best_windows(
+    activity: Activity,
+    conditions: &crate::data::BeachConditions,
+) -> Vec<TimeWindow> {
+    let profile = get_profile(activity);
+
+    // Get weather data for scoring
+    let (temp, wind, uv) = match &conditions.weather {
+        Some(w) => (w.temperature as f32, w.wind as f32, w.uv as f32),
+        None => return vec![], // Can't score without weather
+    };
+
+    // Get water status
+    let water_status = conditions
+        .water_quality
+        .as_ref()
+        .map(|wq| wq.status)
+        .unwrap_or(crate::data::WaterStatus::Unknown);
+
+    // Get tide info
+    let (tide_height, max_tide) = match &conditions.tides {
+        Some(t) => {
+            let max_h = t.next_high.as_ref().map(|h| h.height).unwrap_or(4.8);
+            (t.current_height as f32, max_h as f32)
+        }
+        None => (2.4, 4.8), // Default mid-tide
+    };
+
+    // Score each hour from 6am to 9pm
+    let mut hourly_scores: Vec<(u8, u8)> = Vec::new();
+    for hour in 6..=21 {
+        // Estimate crowd level based on time of day (simple heuristic)
+        let crowd_level = estimate_crowd_level(hour);
+
+        let score = profile.score_time_slot(
+            hour,
+            conditions.beach.id,
+            temp,
+            wind,
+            uv,
+            water_status,
+            tide_height,
+            max_tide,
+            crowd_level,
+        );
+
+        hourly_scores.push((hour, score.score));
+    }
+
+    // Group adjacent high-scoring hours into windows
+    group_into_windows(&hourly_scores, activity, temp, water_status, tide_height, max_tide)
+}
+
+/// Estimates crowd level based on time of day (0.0 = empty, 1.0 = packed)
+fn estimate_crowd_level(hour: u8) -> f32 {
+    match hour {
+        6..=7 => 0.1,     // Early morning - very quiet
+        8..=9 => 0.2,     // Morning - light
+        10..=11 => 0.4,   // Late morning - moderate
+        12..=14 => 0.8,   // Midday - busy
+        15..=17 => 0.6,   // Afternoon - moderate to busy
+        18..=19 => 0.4,   // Early evening - moderate
+        20..=21 => 0.2,   // Evening - light
+        _ => 0.5,         // Default
+    }
+}
+
+/// Groups hourly scores into time windows and returns top windows sorted by score
+fn group_into_windows(
+    hourly_scores: &[(u8, u8)],
+    activity: Activity,
+    temp: f32,
+    water_status: crate::data::WaterStatus,
+    tide_height: f32,
+    max_tide: f32,
+) -> Vec<TimeWindow> {
+    if hourly_scores.is_empty() {
+        return vec![];
+    }
+
+    // Find contiguous windows where score is above threshold (50)
+    let threshold = 50u8;
+    let mut windows: Vec<TimeWindow> = Vec::new();
+    let mut current_window: Option<(u8, u8, u8)> = None; // (start, end, max_score)
+
+    for &(hour, score) in hourly_scores {
+        if score >= threshold {
+            match current_window {
+                Some((start, _, max_s)) => {
+                    current_window = Some((start, hour, max_s.max(score)));
+                }
+                None => {
+                    current_window = Some((hour, hour, score));
+                }
+            }
+        } else {
+            // End current window if exists
+            if let Some((start, end, max_score)) = current_window {
+                let reason = generate_reason(activity, temp, water_status, tide_height, max_tide);
+                windows.push(TimeWindow {
+                    start_hour: start,
+                    end_hour: end + 1, // End is exclusive
+                    score: max_score,
+                    reason,
+                });
+                current_window = None;
+            }
+        }
+    }
+
+    // Don't forget the last window
+    if let Some((start, end, max_score)) = current_window {
+        let reason = generate_reason(activity, temp, water_status, tide_height, max_tide);
+        windows.push(TimeWindow {
+            start_hour: start,
+            end_hour: end + 1,
+            score: max_score,
+            reason,
+        });
+    }
+
+    // If no windows above threshold, create windows from best individual hours
+    if windows.is_empty() {
+        let mut sorted = hourly_scores.to_vec();
+        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+
+        for &(hour, score) in sorted.iter().take(3) {
+            let reason = generate_reason(activity, temp, water_status, tide_height, max_tide);
+            windows.push(TimeWindow {
+                start_hour: hour,
+                end_hour: hour + 1,
+                score,
+                reason,
+            });
+        }
+    }
+
+    // Sort by score descending
+    windows.sort_by(|a, b| b.score.cmp(&a.score));
+    windows
+}
+
+/// Generates a human-readable reason string for the time window
+fn generate_reason(
+    activity: Activity,
+    temp: f32,
+    water_status: crate::data::WaterStatus,
+    tide_height: f32,
+    max_tide: f32,
+) -> String {
+    let mut factors = Vec::new();
+
+    // Temperature description
+    let temp_desc = if temp >= 25.0 {
+        format!("Hot ({:.0}C)", temp)
+    } else if temp >= 20.0 {
+        format!("Warm ({:.0}C)", temp)
+    } else if temp >= 15.0 {
+        format!("Mild ({:.0}C)", temp)
+    } else {
+        format!("Cool ({:.0}C)", temp)
+    };
+    factors.push(temp_desc);
+
+    // Water status (relevant for swimming)
+    if activity == Activity::Swimming {
+        match water_status {
+            crate::data::WaterStatus::Safe => factors.push("safe water".to_string()),
+            crate::data::WaterStatus::Advisory => factors.push("advisory in effect".to_string()),
+            crate::data::WaterStatus::Closed => factors.push("water closed".to_string()),
+            crate::data::WaterStatus::Unknown => {}
+        }
+    }
+
+    // Tide description
+    let tide_ratio = tide_height / max_tide;
+    let tide_desc = if tide_ratio > 0.7 {
+        "high tide"
+    } else if tide_ratio > 0.3 {
+        "mid-tide"
+    } else {
+        "low tide"
+    };
+    factors.push(tide_desc.to_string());
+
+    factors.join(", ")
+}
+
+/// Formats an hour (0-23) into a human-readable time string
+fn format_hour(hour: u8) -> String {
+    match hour {
+        0 => "12:00 AM".to_string(),
+        1..=11 => format!("{}:00 AM", hour),
+        12 => "12:00 PM".to_string(),
+        13..=23 => format!("{}:00 PM", hour - 12),
+        _ => format!("{}:00", hour),
+    }
+}
+
 /// Renders the help text at the bottom
 fn render_help_text(frame: &mut Frame, area: Rect) {
     let help_line = Line::from(vec![
         Span::styled("<- Back", Style::default().fg(colors::SECONDARY)),
+        Span::raw("  "),
+        Span::styled("1-5", Style::default().fg(colors::HEADER)),
+        Span::styled(" Activity", Style::default().fg(colors::SECONDARY)),
         Span::raw("  "),
         Span::styled("r", Style::default().fg(colors::HEADER)),
         Span::styled(" Refresh", Style::default().fg(colors::SECONDARY)),
