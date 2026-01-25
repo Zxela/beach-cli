@@ -109,7 +109,7 @@ pub static BEACHES: [Beach; 12] = [
 /// # Example
 ///
 /// ```
-/// use weather_cli::data::beach::get_beach_by_id;
+/// use vanbeach::data::beach::get_beach_by_id;
 ///
 /// if let Some(beach) = get_beach_by_id("kitsilano") {
 ///     println!("Found: {}", beach.name);
@@ -129,7 +129,7 @@ pub fn get_beach_by_id(id: &str) -> Option<&'static Beach> {
 /// # Example
 ///
 /// ```
-/// use weather_cli::data::beach::all_beaches;
+/// use vanbeach::data::beach::all_beaches;
 ///
 /// for beach in all_beaches() {
 ///     println!("{}: ({}, {})", beach.name, beach.latitude, beach.longitude);
