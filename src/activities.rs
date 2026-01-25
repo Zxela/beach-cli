@@ -383,6 +383,51 @@ pub fn sunset_time_scorer(hour: u8) -> f32 {
     }
 }
 
+/// Dynamic time-of-day scorer for sunset activities based on actual sunset time.
+///
+/// Scores hours based on their distance from the provided sunset hour,
+/// allowing accurate recommendations regardless of season or location.
+///
+/// # Arguments
+///
+/// * `hour` - The hour of the day to score (0-23)
+/// * `sunset_hour` - The hour when sunset occurs (0-23)
+///
+/// # Returns
+///
+/// A score from 0.1 to 1.0:
+/// - 1.0 at sunset_hour (peak viewing time)
+/// - 0.9 at ±1 hour (golden hour before, twilight after)
+/// - 0.5 at ±2 hours (good but not optimal)
+/// - 0.2 at ±3 hours (marginal)
+/// - 0.1 beyond ±3 hours (too far from sunset)
+///
+/// # Examples
+///
+/// ```
+/// use vanbeach::activities::sunset_time_scorer_dynamic;
+///
+/// // Summer sunset at 21:00
+/// assert_eq!(sunset_time_scorer_dynamic(21, 21), 1.0);  // Peak at sunset
+/// assert_eq!(sunset_time_scorer_dynamic(20, 21), 0.9);  // Golden hour
+/// assert_eq!(sunset_time_scorer_dynamic(22, 21), 0.9);  // Twilight
+///
+/// // Winter sunset at 17:00
+/// assert_eq!(sunset_time_scorer_dynamic(17, 17), 1.0);  // Peak at sunset
+/// assert_eq!(sunset_time_scorer_dynamic(15, 17), 0.5);  // 2 hours before
+/// ```
+#[allow(dead_code)]
+pub fn sunset_time_scorer_dynamic(hour: u8, sunset_hour: u8) -> f32 {
+    let diff = (hour as i16 - sunset_hour as i16).abs();
+    match diff {
+        0 => 1.0,  // Sunset hour
+        1 => 0.9,  // 1 hour before/after
+        2 => 0.5,  // 2 hours before/after
+        3 => 0.2,  // 3 hours before/after
+        _ => 0.1,  // Too far from sunset
+    }
+}
+
 /// Custom time-of-day scorer for peace & quiet activities.
 /// Peaks at early morning (6-7).
 #[allow(dead_code)]
@@ -827,5 +872,84 @@ mod tests {
         assert!(result.factors.tide >= 0.0 && result.factors.tide <= 1.0);
         assert!(result.factors.crowd >= 0.0 && result.factors.crowd <= 1.0);
         assert!(result.factors.time_of_day >= 0.0 && result.factors.time_of_day <= 1.0);
+    }
+
+    // ========================================================================
+    // Dynamic Sunset Time Scorer Tests
+    // ========================================================================
+
+    #[test]
+    fn test_sunset_time_scorer_dynamic_peaks_at_sunset_hour() {
+        // Verify score is 1.0 when hour == sunset_hour
+        // Test with sunset_hour = 17, 20, 21
+        assert_eq!(sunset_time_scorer_dynamic(17, 17), 1.0);
+        assert_eq!(sunset_time_scorer_dynamic(20, 20), 1.0);
+        assert_eq!(sunset_time_scorer_dynamic(21, 21), 1.0);
+    }
+
+    #[test]
+    fn test_sunset_time_scorer_dynamic_scores_decrease_with_distance() {
+        // Use sunset_hour = 19 as reference
+        let sunset_hour = 19;
+
+        // Verify hour ±1 from sunset scores 0.9
+        assert_eq!(sunset_time_scorer_dynamic(18, sunset_hour), 0.9);
+        assert_eq!(sunset_time_scorer_dynamic(20, sunset_hour), 0.9);
+
+        // Verify hour ±2 from sunset scores 0.5
+        assert_eq!(sunset_time_scorer_dynamic(17, sunset_hour), 0.5);
+        assert_eq!(sunset_time_scorer_dynamic(21, sunset_hour), 0.5);
+
+        // Verify hour ±3 from sunset scores 0.2
+        assert_eq!(sunset_time_scorer_dynamic(16, sunset_hour), 0.2);
+        assert_eq!(sunset_time_scorer_dynamic(22, sunset_hour), 0.2);
+
+        // Verify hour ±4+ from sunset scores 0.1
+        assert_eq!(sunset_time_scorer_dynamic(15, sunset_hour), 0.1);
+        assert_eq!(sunset_time_scorer_dynamic(23, sunset_hour), 0.1);
+        assert_eq!(sunset_time_scorer_dynamic(10, sunset_hour), 0.1);
+        assert_eq!(sunset_time_scorer_dynamic(0, sunset_hour), 0.1);
+    }
+
+    #[test]
+    fn test_sunset_time_scorer_dynamic_with_early_sunset() {
+        // Test with sunset_hour = 17 (winter)
+        let sunset_hour = 17;
+
+        // Verify hour 17 scores 1.0
+        assert_eq!(sunset_time_scorer_dynamic(17, sunset_hour), 1.0);
+
+        // Verify hour 18 scores 0.9 (1 hour after)
+        assert_eq!(sunset_time_scorer_dynamic(18, sunset_hour), 0.9);
+
+        // Verify hour 16 scores 0.9 (1 hour before)
+        assert_eq!(sunset_time_scorer_dynamic(16, sunset_hour), 0.9);
+
+        // Verify hour 19 scores 0.5 (2 hours after)
+        assert_eq!(sunset_time_scorer_dynamic(19, sunset_hour), 0.5);
+
+        // Verify hour 15 scores 0.5 (2 hours before)
+        assert_eq!(sunset_time_scorer_dynamic(15, sunset_hour), 0.5);
+    }
+
+    #[test]
+    fn test_sunset_time_scorer_dynamic_with_late_sunset() {
+        // Test with sunset_hour = 21 (summer)
+        let sunset_hour = 21;
+
+        // Verify hour 21 scores 1.0
+        assert_eq!(sunset_time_scorer_dynamic(21, sunset_hour), 1.0);
+
+        // Verify hour 20 scores 0.9 (1 hour before)
+        assert_eq!(sunset_time_scorer_dynamic(20, sunset_hour), 0.9);
+
+        // Verify hour 22 scores 0.9 (1 hour after)
+        assert_eq!(sunset_time_scorer_dynamic(22, sunset_hour), 0.9);
+
+        // Verify hour 19 scores 0.5 (2 hours before)
+        assert_eq!(sunset_time_scorer_dynamic(19, sunset_hour), 0.5);
+
+        // Verify hour 23 scores 0.5 (2 hours after)
+        assert_eq!(sunset_time_scorer_dynamic(23, sunset_hour), 0.5);
     }
 }
