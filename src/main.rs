@@ -6,6 +6,7 @@
 mod activities;
 mod app;
 mod cache;
+pub mod cli;
 mod crowd;
 mod data;
 mod ui;
@@ -19,9 +20,11 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use clap::Parser;
 use ratatui::{backend::CrosstermBackend, Terminal};
 
 use app::{App, AppState};
+use cli::{Cli, StartupConfig};
 
 /// Sets up a panic hook that restores the terminal before printing the panic message.
 /// This ensures the terminal is usable even if the application panics.
@@ -83,6 +86,18 @@ fn render_loading(frame: &mut ratatui::Frame) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Parse CLI arguments
+    let cli = Cli::parse();
+
+    // Validate and create startup config
+    let startup_config = match StartupConfig::from_cli(&cli) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
     // Set up panic hook to restore terminal on crash
     setup_panic_hook();
 
@@ -93,8 +108,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Create app instance
-    let mut app = App::new();
+    // Create app instance with startup config
+    let mut app = App::with_startup_config(startup_config);
 
     // Initial render to show loading state
     terminal.draw(|f| render_ui(f, &app))?;
