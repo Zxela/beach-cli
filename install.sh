@@ -36,7 +36,7 @@ detect_platform() {
         Linux)
             case "$ARCH" in
                 x86_64)
-                    PLATFORM="x86_64-unknown-linux-musl"
+                    PLATFORM="x86_64-unknown-linux-gnu"
                     ;;
                 aarch64|arm64)
                     PLATFORM="aarch64-unknown-linux-gnu"
