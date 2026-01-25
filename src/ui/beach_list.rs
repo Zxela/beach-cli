@@ -3,6 +3,7 @@
 //! Renders the main beach list view showing all Vancouver beaches with their
 //! current conditions including temperature, weather, and water quality status.
 
+use chrono::{Local, Timelike, Datelike};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -12,7 +13,7 @@ use ratatui::{
 };
 
 use crate::app::App;
-use crate::data::{all_beaches, WeatherCondition, WaterStatus};
+use crate::data::{all_beaches, BeachConditions, WeatherCondition, WaterStatus};
 
 /// Weather condition to icon mapping
 fn weather_icon(condition: &WeatherCondition) -> &'static str {
@@ -63,6 +64,123 @@ fn temperature_color(temp: f64) -> Color {
     } else {
         Color::Blue
     }
+}
+
+/// Generates a contextual hint for a beach based on current conditions.
+///
+/// Hints are prioritized in the following order:
+/// 1. Water quality issue -> "Water advisory"
+/// 2. Within 2h of sunset -> "Sunset in Xh Ym"
+/// 3. High wind (>15 km/h) -> "Windy - good sailing"
+/// 4. Early morning (6-9am) -> "Good for peace" or "Warming up"
+/// 5. Peak hours (12-4pm) + weekend -> "Crowded now"
+/// 6. Peak hours + good weather -> "Peak swimming" or "Peak sun hours"
+/// 7. Default based on temp/conditions
+fn generate_contextual_hint(conditions: Option<&BeachConditions>) -> Option<String> {
+    let conditions = conditions?;
+    let now = Local::now();
+    let current_hour = now.hour() as u8;
+    let is_weekend = matches!(now.weekday(), chrono::Weekday::Sat | chrono::Weekday::Sun);
+
+    // Priority 1: Water quality issue
+    if let Some(ref wq) = conditions.water_quality {
+        if wq.status == WaterStatus::Advisory {
+            return Some("Water advisory".to_string());
+        }
+        if wq.status == WaterStatus::Closed {
+            return Some("Beach closed".to_string());
+        }
+    }
+
+    // Get weather data for remaining checks
+    let weather = conditions.weather.as_ref();
+
+    // Priority 2: Within 2h of sunset
+    if let Some(w) = weather {
+        let current_time = now.time();
+        let sunset_time = w.sunset;
+
+        // Calculate minutes until sunset
+        let current_minutes = current_time.hour() * 60 + current_time.minute();
+        let sunset_minutes = sunset_time.hour() as u32 * 60 + sunset_time.minute() as u32;
+
+        if current_minutes < sunset_minutes {
+            let minutes_until_sunset = sunset_minutes - current_minutes;
+            if minutes_until_sunset <= 120 {
+                let hours = minutes_until_sunset / 60;
+                let mins = minutes_until_sunset % 60;
+                if hours > 0 {
+                    return Some(format!("Sunset in {}h {}m", hours, mins));
+                } else {
+                    return Some(format!("Sunset in {}m", mins));
+                }
+            }
+        }
+    }
+
+    // Priority 3: High wind (>15 km/h)
+    if let Some(w) = weather {
+        if w.wind > 15.0 {
+            return Some("Windy - good sailing".to_string());
+        }
+    }
+
+    // Priority 4: Early morning (6-9am)
+    if current_hour >= 6 && current_hour < 9 {
+        if let Some(w) = weather {
+            if w.temperature < 18.0 {
+                return Some("Warming up".to_string());
+            }
+        }
+        return Some("Good for peace".to_string());
+    }
+
+    // Priority 5 & 6: Peak hours (12-4pm)
+    if current_hour >= 12 && current_hour < 16 {
+        // Priority 5: Weekend crowds
+        if is_weekend {
+            return Some("Crowded now".to_string());
+        }
+
+        // Priority 6: Good weather during peak hours
+        if let Some(w) = weather {
+            let is_good_weather = matches!(
+                w.condition,
+                WeatherCondition::Clear | WeatherCondition::PartlyCloudy
+            );
+
+            if is_good_weather && w.temperature >= 20.0 {
+                if w.condition == WeatherCondition::Clear {
+                    return Some("Peak sun hours".to_string());
+                }
+                return Some("Peak swimming".to_string());
+            }
+        }
+    }
+
+    // Priority 7: Default based on conditions
+    if let Some(w) = weather {
+        // Evening hints
+        if current_hour >= 17 && current_hour < 21 {
+            return Some("Evening stroll".to_string());
+        }
+
+        // Temperature-based defaults
+        if w.temperature >= 25.0 && matches!(w.condition, WeatherCondition::Clear) {
+            return Some("Great beach day".to_string());
+        }
+
+        if w.temperature >= 20.0 {
+            return Some("Good for swimming".to_string());
+        }
+
+        if w.temperature < 15.0 {
+            return Some("Brisk walk weather".to_string());
+        }
+    }
+
+    // No specific hint
+    None
 }
 
 /// Renders the beach list screen
@@ -133,6 +251,9 @@ fn render_list(frame: &mut Frame, app: &App, area: Rect) {
             None => ("\u{26AA}", Color::Gray), // ⚪
         };
 
+        // Generate contextual hint
+        let hint = generate_contextual_hint(conditions);
+
         // Build the line with spans
         let name_style = if is_selected {
             Style::default()
@@ -148,11 +269,11 @@ fn render_list(frame: &mut Frame, app: &App, area: Rect) {
             Style::default()
         };
 
-        // Format: " ▸ Beach Name                  22°C  ☀   🟢"
+        // Format: " ▸ Beach Name                  22°C  ☀   🟢   Hint text"
         // Pad beach name to fixed width for alignment
         let name_padded = format!("{:<25}", beach.name);
 
-        let line = Line::from(vec![
+        let mut spans = vec![
             Span::styled(cursor, cursor_style),
             Span::styled(name_padded, name_style),
             Span::raw("  "),
@@ -161,7 +282,18 @@ fn render_list(frame: &mut Frame, app: &App, area: Rect) {
             Span::raw(weather_icon_str),
             Span::raw("   "),
             Span::styled(water_icon_str, Style::default().fg(water_color)),
-        ]);
+        ];
+
+        // Add contextual hint in muted color if present
+        if let Some(hint_text) = hint {
+            spans.push(Span::raw("   "));
+            spans.push(Span::styled(
+                hint_text,
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+
+        let line = Line::from(spans);
 
         lines.push(line);
     }
