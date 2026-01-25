@@ -8,10 +8,10 @@ pub mod tides;
 pub mod water_quality;
 pub mod weather;
 
-pub use beach::{all_beaches, get_beach_by_id, BEACHES};
-pub use tides::{TidesClient, TidesError};
+pub use beach::{all_beaches, get_beach_by_id};
+pub use tides::TidesClient;
 pub use water_quality::{WaterQualityClient, WaterQualityError};
-pub use weather::{weather_code_to_condition, WeatherClient, WeatherError};
+pub use weather::{WeatherClient, WeatherError};
 
 use chrono::{DateTime, Local, NaiveDate, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};

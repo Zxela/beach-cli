@@ -21,10 +21,6 @@ pub enum TidesError {
     /// No tide data available for the requested date
     #[error("No tide data available for the requested date")]
     NoDataAvailable,
-
-    /// Cache read/write error
-    #[error("Cache error: {0}")]
-    CacheError(String),
 }
 
 /// Client for fetching tide information

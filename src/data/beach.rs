@@ -115,6 +115,7 @@ pub static BEACHES: [Beach; 12] = [
 ///     println!("Found: {}", beach.name);
 /// }
 /// ```
+#[allow(dead_code)]
 pub fn get_beach_by_id(id: &str) -> Option<&'static Beach> {
     BEACHES.iter().find(|beach| beach.id == id)
 }

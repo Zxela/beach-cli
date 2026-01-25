@@ -32,14 +32,6 @@ pub enum WaterQualityError {
     /// Failed to parse API response
     #[error("Failed to parse API response: {0}")]
     ParseError(String),
-
-    /// No data available for the requested beach
-    #[error("No water quality data available for beach: {0}")]
-    NoData(String),
-
-    /// Cache error
-    #[error("Cache error: {0}")]
-    CacheError(String),
 }
 
 /// Response from Vancouver Open Data API
@@ -52,6 +44,7 @@ struct ApiResponse {
 #[derive(Debug, Deserialize)]
 struct WaterQualityRecord {
     /// Beach name from the API
+    #[allow(dead_code)]
     beach_name: Option<String>,
     /// E. coli count (CFU per 100mL)
     e_coli: Option<f64>,

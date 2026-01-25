@@ -196,6 +196,7 @@ fn render_help(frame: &mut Frame, area: Rect) {
 }
 
 /// Alias for render_beach_list for compatibility
+#[allow(dead_code)]
 pub fn render(frame: &mut Frame, app: &App) {
     render_beach_list(frame, app);
 }

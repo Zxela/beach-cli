@@ -148,6 +148,7 @@ impl App {
     ///
     /// # Arguments
     /// * `beach_id` - The ID of the beach to refresh
+    #[allow(dead_code)]
     pub async fn refresh_beach(&mut self, beach_id: &str) {
         let Some(beach) = get_beach_by_id(beach_id) else {
             return;
@@ -260,6 +261,7 @@ impl App {
     }
 
     /// Gets the conditions for the currently selected beach
+    #[allow(dead_code)]
     pub fn get_selected_conditions(&self) -> Option<&BeachConditions> {
         self.selected_beach()
             .and_then(|beach| self.beach_conditions.get(beach.id))

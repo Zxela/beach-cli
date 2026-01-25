@@ -56,6 +56,7 @@ impl WeatherClient {
     }
 
     /// Create a new WeatherClient with a custom HTTP client
+    #[allow(dead_code)]
     pub fn with_client(client: Client) -> Self {
         Self {
             client,
@@ -64,6 +65,7 @@ impl WeatherClient {
     }
 
     /// Create a new WeatherClient with a custom timezone
+    #[allow(dead_code)]
     pub fn with_timezone(mut self, timezone: impl Into<String>) -> Self {
         self.timezone = timezone.into();
         self

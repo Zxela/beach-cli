@@ -26,6 +26,7 @@ pub struct CachedData<T> {
     /// The cached data
     pub data: T,
     /// When the data was originally cached
+    #[allow(dead_code)]
     pub cached_at: DateTime<Utc>,
     /// Whether the cache entry has expired
     pub is_expired: bool,
@@ -57,6 +58,7 @@ impl CacheManager {
     /// Creates a new CacheManager with a custom cache directory
     ///
     /// Useful for testing or when a specific cache location is needed.
+    #[allow(dead_code)]
     pub fn with_dir(cache_dir: PathBuf) -> Self {
         Self { cache_dir }
     }

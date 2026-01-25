@@ -7,4 +7,4 @@
 
 mod manager;
 
-pub use manager::{CacheManager, CachedData};
+pub use manager::CacheManager;
