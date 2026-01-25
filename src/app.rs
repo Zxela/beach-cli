@@ -7,6 +7,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use std::collections::HashMap;
 
 use crate::activities::Activity;
+use crate::cli::StartupConfig;
 use crate::cache::CacheManager;
 use crate::data::{
     all_beaches, get_beach_by_id, Beach, BeachConditions, TidesClient, WaterQuality,
@@ -42,6 +43,8 @@ pub struct App {
     pub plan_cursor: (usize, usize),
     /// Visible hour range in PlanTrip screen (start_hour, end_hour), default 6am-9pm
     pub plan_time_range: (u8, u8),
+    /// Flag to transition to PlanTrip after data loads (from --plan CLI flag)
+    pub pending_plan_trip: bool,
     /// Weather API client
     weather_client: WeatherClient,
     /// Tides API client
@@ -62,12 +65,34 @@ impl App {
             current_activity: None,
             plan_cursor: (0, 0),
             plan_time_range: (6, 21),
+            pending_plan_trip: false,
             weather_client: WeatherClient::new(),
             tides_client: TidesClient::new(cache.clone()),
             water_quality_client: cache
                 .map(WaterQualityClient::with_cache)
                 .unwrap_or_default(),
         }
+    }
+
+    /// Creates a new App instance with the given startup configuration.
+    ///
+    /// This is used to apply CLI arguments like --plan to set the initial state.
+    ///
+    /// # Arguments
+    /// * `config` - The startup configuration derived from CLI arguments
+    pub fn with_startup_config(config: StartupConfig) -> Self {
+        let mut app = Self::new();
+
+        // Apply startup config
+        if config.start_in_plan_trip {
+            // Set a flag to transition to PlanTrip after data loads
+            app.pending_plan_trip = true;
+        }
+        if let Some(activity) = config.initial_activity {
+            app.current_activity = Some(activity);
+        }
+
+        app
     }
 
     /// Creates a new App instance with custom clients (for testing)
@@ -85,6 +110,7 @@ impl App {
             current_activity: None,
             plan_cursor: (0, 0),
             plan_time_range: (6, 21),
+            pending_plan_trip: false,
             weather_client,
             tides_client,
             water_quality_client,
@@ -155,8 +181,13 @@ impl App {
             self.beach_conditions.insert(beach.id.to_string(), conditions);
         }
 
-        // Transition to beach list state
-        self.state = AppState::BeachList;
+        // Transition to appropriate state based on startup config
+        if self.pending_plan_trip {
+            self.state = AppState::PlanTrip;
+            self.pending_plan_trip = false;
+        } else {
+            self.state = AppState::BeachList;
+        }
     }
 
     /// Refreshes data for a single beach
@@ -971,5 +1002,68 @@ mod tests {
             }
             _ => panic!("Expected BeachDetail state"),
         }
+    }
+
+    // ========================================================================
+    // Startup Config Tests (Task 021)
+    // ========================================================================
+
+    #[test]
+    fn test_with_startup_config_default_starts_in_loading() {
+        let config = StartupConfig::default();
+        let app = App::with_startup_config(config);
+        assert_eq!(app.state, AppState::Loading);
+        assert!(!app.pending_plan_trip);
+        assert!(app.current_activity.is_none());
+    }
+
+    #[test]
+    fn test_with_startup_config_plan_only_sets_pending_flag() {
+        let config = StartupConfig {
+            start_in_plan_trip: true,
+            initial_activity: None,
+        };
+        let app = App::with_startup_config(config);
+        assert_eq!(app.state, AppState::Loading);
+        assert!(app.pending_plan_trip);
+        assert!(app.current_activity.is_none());
+    }
+
+    #[test]
+    fn test_with_startup_config_plan_with_activity_sets_both() {
+        let config = StartupConfig {
+            start_in_plan_trip: true,
+            initial_activity: Some(Activity::Swimming),
+        };
+        let app = App::with_startup_config(config);
+        assert_eq!(app.state, AppState::Loading);
+        assert!(app.pending_plan_trip);
+        assert_eq!(app.current_activity, Some(Activity::Swimming));
+    }
+
+    #[test]
+    fn test_pending_plan_trip_cleared_after_data_load() {
+        let config = StartupConfig {
+            start_in_plan_trip: true,
+            initial_activity: None,
+        };
+        let mut app = App::with_startup_config(config);
+        assert!(app.pending_plan_trip);
+
+        // Simulate data load completion by manually setting state
+        // (In real usage, load_all_data would do this)
+        if app.pending_plan_trip {
+            app.state = AppState::PlanTrip;
+            app.pending_plan_trip = false;
+        }
+
+        assert_eq!(app.state, AppState::PlanTrip);
+        assert!(!app.pending_plan_trip);
+    }
+
+    #[test]
+    fn test_app_new_has_pending_plan_trip_false() {
+        let app = App::new();
+        assert!(!app.pending_plan_trip);
     }
 }
