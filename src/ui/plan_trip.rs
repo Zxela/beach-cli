@@ -41,9 +41,9 @@ mod colors {
 
 /// Block characters for different score ranges
 const BLOCK_EXCELLENT: &str = "\u{2588}\u{2588}"; // ██
-const BLOCK_GOOD: &str = "\u{2593}\u{2593}";      // ▓▓
-const BLOCK_FAIR: &str = "\u{2592}\u{2592}";      // ▒▒
-const BLOCK_POOR: &str = "\u{2591}\u{2591}";      // ░░
+const BLOCK_GOOD: &str = "\u{2593}\u{2593}"; // ▓▓
+const BLOCK_FAIR: &str = "\u{2592}\u{2592}"; // ▒▒
+const BLOCK_POOR: &str = "\u{2591}\u{2591}"; // ░░
 
 /// Returns the block character and color for a given score
 fn score_to_block(score: u8) -> (&'static str, Color) {
@@ -126,9 +126,7 @@ fn estimate_crowd_level(hour: u8) -> f32 {
 
 /// Finds the best beach/hour combination across all beaches and hours
 fn find_best_recommendation(app: &App) -> Option<(String, String, u8, u8)> {
-    if app.current_activity.is_none() {
-        return None;
-    }
+    app.current_activity?;
 
     let beaches = all_beaches();
     let (start_hour, end_hour) = app.plan_time_range;
@@ -141,12 +139,7 @@ fn find_best_recommendation(app: &App) -> Option<(String, String, u8, u8)> {
             let score = compute_score(app, beach.id, hour);
             if score > best_score {
                 best_score = score;
-                best = Some((
-                    beach.name.to_string(),
-                    beach.id.to_string(),
-                    hour,
-                    score,
-                ));
+                best = Some((beach.name.to_string(), beach.id.to_string(), hour, score));
             }
         }
     }
@@ -216,11 +209,11 @@ pub fn render(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),  // Activity selector
-            Constraint::Min(8),     // Heatmap grid
-            Constraint::Length(2),  // Legend
-            Constraint::Length(3),  // Best recommendation + selected
-            Constraint::Length(1),  // Help bar
+            Constraint::Length(1), // Activity selector
+            Constraint::Min(8),    // Heatmap grid
+            Constraint::Length(2), // Legend
+            Constraint::Length(3), // Best recommendation + selected
+            Constraint::Length(1), // Help bar
         ])
         .split(inner_area);
 
@@ -235,7 +228,10 @@ pub fn render(frame: &mut Frame, app: &App) {
 /// Renders the activity selector row
 fn render_activity_selector(frame: &mut Frame, area: Rect, current_activity: Option<Activity>) {
     let activities = Activity::all();
-    let mut spans = vec![Span::styled("Activity: ", Style::default().fg(colors::SECONDARY))];
+    let mut spans = vec![Span::styled(
+        "Activity: ",
+        Style::default().fg(colors::SECONDARY),
+    )];
 
     for (i, activity) in activities.iter().enumerate() {
         let is_selected = current_activity == Some(*activity);
@@ -284,13 +280,18 @@ fn render_heatmap_grid(frame: &mut Frame, area: Rect, app: &App) {
     let mut lines: Vec<Line> = Vec::new();
 
     // Header row with hour labels
-    let mut header_spans = vec![
-        Span::raw(format!("{:width$}", "", width = beach_name_width + 2)),
-    ];
+    let mut header_spans = vec![Span::raw(format!(
+        "{:width$}",
+        "",
+        width = beach_name_width + 2
+    ))];
 
     for hour in &hours {
         let hour_str = format!("{:^width$}", format_hour_short(*hour), width = cell_width);
-        header_spans.push(Span::styled(hour_str, Style::default().fg(colors::SECONDARY)));
+        header_spans.push(Span::styled(
+            hour_str,
+            Style::default().fg(colors::SECONDARY),
+        ));
     }
     lines.push(Line::from(header_spans));
 
@@ -313,10 +314,7 @@ fn render_heatmap_grid(frame: &mut Frame, area: Rect, app: &App) {
             Style::default().fg(colors::PRIMARY)
         };
 
-        let mut row_spans = vec![Span::styled(
-            format!("{} ", beach_name),
-            name_style,
-        )];
+        let mut row_spans = vec![Span::styled(format!("{} ", beach_name), name_style)];
 
         for (hour_idx, hour) in hours.iter().enumerate() {
             let is_cursor = beach_idx == app.plan_cursor.0 && hour_idx == app.plan_cursor.1;
@@ -379,7 +377,12 @@ fn render_recommendations(frame: &mut Frame, area: Rect, app: &App) {
     if let Some((beach_name, _beach_id, hour, score)) = find_best_recommendation(app) {
         let time_str = format_hour_long(hour);
         lines.push(Line::from(vec![
-            Span::styled("BEST: ", Style::default().fg(colors::HEADER).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "BEST: ",
+                Style::default()
+                    .fg(colors::HEADER)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 format!("{} @ {}  ", beach_name, time_str),
                 Style::default().fg(colors::PRIMARY),
@@ -387,7 +390,9 @@ fn render_recommendations(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled("Score: ", Style::default().fg(colors::SECONDARY)),
             Span::styled(
                 format!("{}/100", score),
-                Style::default().fg(colors::EXCELLENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(colors::EXCELLENT)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]));
     } else {

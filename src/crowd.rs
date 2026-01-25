@@ -49,10 +49,10 @@ pub fn estimate_crowd(month: u32, weekday: Weekday, hour: u32) -> f32 {
 /// seasons and winter having progressively lower values.
 fn calculate_season_factor(month: u32) -> f32 {
     match month {
-        6..=8 => 1.0,   // Summer - busiest
-        5 | 9 => 0.6,   // Shoulder season
-        4 | 10 => 0.3,  // Spring/fall
-        _ => 0.1,       // Winter - minimal
+        6..=8 => 1.0,  // Summer - busiest
+        5 | 9 => 0.6,  // Shoulder season
+        4 | 10 => 0.3, // Spring/fall
+        _ => 0.1,      // Winter - minimal
     }
 }
 
@@ -74,11 +74,11 @@ fn calculate_day_factor(weekday: Weekday) -> f32 {
 /// and evening hours having progressively lower values.
 fn calculate_hour_factor(hour: u32) -> f32 {
     match hour {
-        12..=16 => 1.0,       // Peak afternoon
+        12..=16 => 1.0, // Peak afternoon
         10..=11 | 17..=18 => 0.7,
         8..=9 | 19..=20 => 0.4,
         6..=7 | 21 => 0.2,
-        _ => 0.1,             // Night/early morning
+        _ => 0.1, // Night/early morning
     }
 }
 

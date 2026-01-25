@@ -53,6 +53,7 @@ impl Activity {
     /// - "peace" | "quiet" -> Peace
     ///
     /// Returns `None` if the input doesn't match any activity.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Activity> {
         match s.to_lowercase().trim() {
             "swim" | "swimming" => Some(Activity::Swimming),
@@ -242,6 +243,7 @@ impl ActivityProfile {
 
     /// Compute the overall score for a time slot.
     /// Returns a TimeSlotScore with the final 0-100 score and all factor scores.
+    #[allow(clippy::too_many_arguments)]
     pub fn score_time_slot(
         &self,
         hour: u8,
@@ -535,7 +537,11 @@ mod tests {
 
         // 30.5°C is halfway between 28 (max) and 33 (max+5)
         let score2 = profile.score_temperature(30.5);
-        assert!(score2 > 0.4 && score2 < 0.6, "Expected ~0.5, got {}", score2);
+        assert!(
+            score2 > 0.4 && score2 < 0.6,
+            "Expected ~0.5, got {}",
+            score2
+        );
     }
 
     #[test]
@@ -563,11 +569,7 @@ mod tests {
         assert_eq!(profile.score_wind(0.0), 0.0);
         // 7.5 km/h = 7.5/15 = 0.5
         let score = profile.score_wind(7.5);
-        assert!(
-            (score - 0.5).abs() < 0.01,
-            "Expected 0.5, got {}",
-            score
-        );
+        assert!((score - 0.5).abs() < 0.01, "Expected 0.5, got {}", score);
     }
 
     #[test]
@@ -587,11 +589,18 @@ mod tests {
         assert_eq!(profile.water_quality_weight, 0.4);
 
         // Score with closed water should be significantly lower
-        let safe_score = profile.score_time_slot(
-            12, "test", 24.0, 5.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.3,
-        );
+        let safe_score =
+            profile.score_time_slot(12, "test", 24.0, 5.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.3);
         let closed_score = profile.score_time_slot(
-            12, "test", 24.0, 5.0, 5.0, WaterStatus::Closed, 2.4, 4.8, 0.3,
+            12,
+            "test",
+            24.0,
+            5.0,
+            5.0,
+            WaterStatus::Closed,
+            2.4,
+            4.8,
+            0.3,
         );
 
         // With water_quality_weight=0.4, closed water (0.0) vs safe (1.0)
@@ -612,11 +621,18 @@ mod tests {
 
         // Good wind (20 km/h) vs no wind (0 km/h)
         let good_wind_score = profile.score_time_slot(
-            12, "test", 20.0, 20.0, 3.0, WaterStatus::Safe, 4.0, 4.8, 0.3,
+            12,
+            "test",
+            20.0,
+            20.0,
+            3.0,
+            WaterStatus::Safe,
+            4.0,
+            4.8,
+            0.3,
         );
-        let no_wind_score = profile.score_time_slot(
-            12, "test", 20.0, 0.0, 3.0, WaterStatus::Safe, 4.0, 4.8, 0.3,
-        );
+        let no_wind_score =
+            profile.score_time_slot(12, "test", 20.0, 0.0, 3.0, WaterStatus::Safe, 4.0, 4.8, 0.3);
 
         assert!(
             good_wind_score.score > no_wind_score.score + 40,
@@ -633,12 +649,10 @@ mod tests {
         assert_eq!(profile.crowd_weight, 0.7);
 
         // Empty beach vs packed beach
-        let quiet_score = profile.score_time_slot(
-            7, "test", 18.0, 5.0, 2.0, WaterStatus::Safe, 2.4, 4.8, 0.0,
-        );
-        let crowded_score = profile.score_time_slot(
-            7, "test", 18.0, 5.0, 2.0, WaterStatus::Safe, 2.4, 4.8, 1.0,
-        );
+        let quiet_score =
+            profile.score_time_slot(7, "test", 18.0, 5.0, 2.0, WaterStatus::Safe, 2.4, 4.8, 0.0);
+        let crowded_score =
+            profile.score_time_slot(7, "test", 18.0, 5.0, 2.0, WaterStatus::Safe, 2.4, 4.8, 1.0);
 
         assert!(
             quiet_score.score > crowded_score.score + 50,
@@ -679,7 +693,15 @@ mod tests {
 
             // Test with "perfect" conditions
             let perfect = profile.score_time_slot(
-                12, "test", 24.0, 10.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.0,
+                12,
+                "test",
+                24.0,
+                10.0,
+                5.0,
+                WaterStatus::Safe,
+                2.4,
+                4.8,
+                0.0,
             );
             assert!(
                 perfect.score <= 100,
@@ -690,7 +712,15 @@ mod tests {
 
             // Test with "bad" conditions
             let bad = profile.score_time_slot(
-                3, "test", 5.0, 50.0, 11.0, WaterStatus::Closed, 0.0, 4.8, 1.0,
+                3,
+                "test",
+                5.0,
+                50.0,
+                11.0,
+                WaterStatus::Closed,
+                0.0,
+                4.8,
+                1.0,
             );
             assert!(
                 bad.score <= 100,
@@ -704,7 +734,10 @@ mod tests {
     #[test]
     fn test_get_profile_returns_correct_activity() {
         assert_eq!(get_profile(Activity::Swimming).activity, Activity::Swimming);
-        assert_eq!(get_profile(Activity::Sunbathing).activity, Activity::Sunbathing);
+        assert_eq!(
+            get_profile(Activity::Sunbathing).activity,
+            Activity::Sunbathing
+        );
         assert_eq!(get_profile(Activity::Sailing).activity, Activity::Sailing);
         assert_eq!(get_profile(Activity::Sunset).activity, Activity::Sunset);
         assert_eq!(get_profile(Activity::Peace).activity, Activity::Peace);
@@ -756,7 +789,15 @@ mod tests {
     fn test_time_slot_score_has_correct_metadata() {
         let profile = get_profile(Activity::Swimming);
         let score = profile.score_time_slot(
-            14, "kitsilano", 24.0, 10.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.2,
+            14,
+            "kitsilano",
+            24.0,
+            10.0,
+            5.0,
+            WaterStatus::Safe,
+            2.4,
+            4.8,
+            0.2,
         );
 
         assert_eq!(score.hour, 14);
@@ -768,7 +809,15 @@ mod tests {
     fn test_score_factors_are_all_in_range() {
         let profile = get_profile(Activity::Swimming);
         let result = profile.score_time_slot(
-            12, "test", 24.0, 10.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.3,
+            12,
+            "test",
+            24.0,
+            10.0,
+            5.0,
+            WaterStatus::Safe,
+            2.4,
+            4.8,
+            0.3,
         );
 
         assert!(result.factors.temperature >= 0.0 && result.factors.temperature <= 1.0);

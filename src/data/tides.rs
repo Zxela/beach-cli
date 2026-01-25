@@ -41,6 +41,7 @@ struct TidePrediction {
     is_high: bool,
 }
 
+#[allow(dead_code)]
 impl TidesClient {
     /// Creates a new TidesClient with optional cache manager
     pub fn new(cache: Option<CacheManager>) -> Self {
@@ -101,11 +102,8 @@ impl TidesClient {
         let (prev_event, next_event) = self.find_surrounding_events(&predictions, now);
 
         // Determine tide state and calculate current height
-        let (tide_state, current_height) = self.calculate_tide_state_and_height(
-            prev_event.as_ref(),
-            next_event.as_ref(),
-            now,
-        );
+        let (tide_state, current_height) =
+            self.calculate_tide_state_and_height(prev_event.as_ref(), next_event.as_ref(), now);
 
         // Find next high and next low tides
         let (next_high, next_low) = self.find_next_high_low(&predictions, now);
@@ -120,7 +118,11 @@ impl TidesClient {
     }
 
     /// Gets tide predictions for a date range starting from the given date
-    fn get_predictions_for_date_range(&self, start_date: NaiveDate, days: i64) -> Vec<TidePrediction> {
+    fn get_predictions_for_date_range(
+        &self,
+        start_date: NaiveDate,
+        days: i64,
+    ) -> Vec<TidePrediction> {
         let mut predictions = Vec::new();
 
         for day_offset in 0..days {
@@ -442,10 +444,7 @@ impl TidesClient {
             let pred_dt = pred.date.and_time(pred.time);
 
             if pred_dt > now_naive {
-                let local_time = Local
-                    .from_local_datetime(&pred_dt)
-                    .single()
-                    .unwrap_or(now);
+                let local_time = Local.from_local_datetime(&pred_dt).single().unwrap_or(now);
 
                 let event = TideEvent {
                     time: local_time,
@@ -495,10 +494,8 @@ impl TidesClient {
         }
 
         // Get predictions for the date and surrounding days to handle edge cases
-        let predictions = self.get_predictions_for_date_range(
-            date.checked_sub_signed(chrono::Duration::days(1))?,
-            3,
-        );
+        let predictions = self
+            .get_predictions_for_date_range(date.checked_sub_signed(chrono::Duration::days(1))?, 3);
 
         if predictions.is_empty() {
             return None;
@@ -594,12 +591,18 @@ mod tests {
 
         // First event should be high tide at 2:15
         assert!(predictions[0].is_high);
-        assert_eq!(predictions[0].time, NaiveTime::from_hms_opt(2, 15, 0).unwrap());
+        assert_eq!(
+            predictions[0].time,
+            NaiveTime::from_hms_opt(2, 15, 0).unwrap()
+        );
         assert!((predictions[0].height - 4.8).abs() < 0.01);
 
         // Second event should be low tide at 8:45
         assert!(!predictions[1].is_high);
-        assert_eq!(predictions[1].time, NaiveTime::from_hms_opt(8, 45, 0).unwrap());
+        assert_eq!(
+            predictions[1].time,
+            NaiveTime::from_hms_opt(8, 45, 0).unwrap()
+        );
         assert!((predictions[1].height - 1.2).abs() < 0.01);
     }
 
@@ -634,8 +637,15 @@ mod tests {
 
         let (state, height) = client.calculate_tide_state_and_height(Some(&prev), Some(&next), now);
 
-        assert_eq!(state, TideState::Rising, "Should be rising between low and high");
-        assert!(height > 1.2 && height < 4.5, "Height should be between low and high");
+        assert_eq!(
+            state,
+            TideState::Rising,
+            "Should be rising between low and high"
+        );
+        assert!(
+            height > 1.2 && height < 4.5,
+            "Height should be between low and high"
+        );
     }
 
     #[test]
@@ -669,8 +679,15 @@ mod tests {
 
         let (state, height) = client.calculate_tide_state_and_height(Some(&prev), Some(&next), now);
 
-        assert_eq!(state, TideState::Falling, "Should be falling between high and low");
-        assert!(height > 1.2 && height < 4.8, "Height should be between high and low");
+        assert_eq!(
+            state,
+            TideState::Falling,
+            "Should be falling between high and low"
+        );
+        assert!(
+            height > 1.2 && height < 4.8,
+            "Height should be between high and low"
+        );
     }
 
     #[test]
@@ -935,11 +952,7 @@ mod tests {
         // All 24 hours should return valid heights
         for hour in 0..24u8 {
             let height = client.get_height_at_hour(date, hour);
-            assert!(
-                height.is_some(),
-                "Hour {} should return valid height",
-                hour
-            );
+            assert!(height.is_some(), "Hour {} should return valid height", hour);
 
             let h = height.unwrap();
             // All heights should be in reasonable range

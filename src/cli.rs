@@ -102,8 +102,14 @@ mod tests {
     #[test]
     fn test_parse_activity_arg_sunbathing_aliases() {
         assert_eq!(parse_activity_arg("sun").unwrap(), Activity::Sunbathing);
-        assert_eq!(parse_activity_arg("sunbathing").unwrap(), Activity::Sunbathing);
-        assert_eq!(parse_activity_arg("sunbathe").unwrap(), Activity::Sunbathing);
+        assert_eq!(
+            parse_activity_arg("sunbathing").unwrap(),
+            Activity::Sunbathing
+        );
+        assert_eq!(
+            parse_activity_arg("sunbathe").unwrap(),
+            Activity::Sunbathing
+        );
     }
 
     #[test]

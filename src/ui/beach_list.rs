@@ -3,7 +3,7 @@
 //! Renders the main beach list view showing all Vancouver beaches with their
 //! current conditions including temperature, weather, and water quality status.
 
-use chrono::{Local, Timelike, Datelike};
+use chrono::{Datelike, Local, Timelike};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -13,29 +13,29 @@ use ratatui::{
 };
 
 use crate::app::App;
-use crate::data::{all_beaches, BeachConditions, WeatherCondition, WaterStatus};
+use crate::data::{all_beaches, BeachConditions, WaterStatus, WeatherCondition};
 
 /// Weather condition to icon mapping
 fn weather_icon(condition: &WeatherCondition) -> &'static str {
     match condition {
-        WeatherCondition::Clear => "\u{2600}",         // ☀
-        WeatherCondition::PartlyCloudy => "\u{26C5}",  // ⛅
-        WeatherCondition::Cloudy => "\u{2601}",        // ☁
-        WeatherCondition::Rain => "\u{1F327}",         // 🌧
-        WeatherCondition::Showers => "\u{1F326}",      // 🌦
-        WeatherCondition::Thunderstorm => "\u{26C8}",  // ⛈
-        WeatherCondition::Snow => "\u{2744}",          // ❄
-        WeatherCondition::Fog => "\u{1F32B}",          // 🌫
+        WeatherCondition::Clear => "\u{2600}",        // ☀
+        WeatherCondition::PartlyCloudy => "\u{26C5}", // ⛅
+        WeatherCondition::Cloudy => "\u{2601}",       // ☁
+        WeatherCondition::Rain => "\u{1F327}",        // 🌧
+        WeatherCondition::Showers => "\u{1F326}",     // 🌦
+        WeatherCondition::Thunderstorm => "\u{26C8}", // ⛈
+        WeatherCondition::Snow => "\u{2744}",         // ❄
+        WeatherCondition::Fog => "\u{1F32B}",         // 🌫
     }
 }
 
 /// Water status to icon mapping
 fn water_status_icon(status: &WaterStatus) -> &'static str {
     match status {
-        WaterStatus::Safe => "\u{1F7E2}",      // 🟢
-        WaterStatus::Advisory => "\u{1F7E1}",  // 🟡
-        WaterStatus::Closed => "\u{1F534}",    // 🔴
-        WaterStatus::Unknown => "\u{26AA}",    // ⚪
+        WaterStatus::Safe => "\u{1F7E2}",     // 🟢
+        WaterStatus::Advisory => "\u{1F7E1}", // 🟡
+        WaterStatus::Closed => "\u{1F534}",   // 🔴
+        WaterStatus::Unknown => "\u{26AA}",   // ⚪
     }
 }
 
@@ -102,7 +102,7 @@ fn generate_contextual_hint(conditions: Option<&BeachConditions>) -> Option<Stri
 
         // Calculate minutes until sunset
         let current_minutes = current_time.hour() * 60 + current_time.minute();
-        let sunset_minutes = sunset_time.hour() as u32 * 60 + sunset_time.minute() as u32;
+        let sunset_minutes = sunset_time.hour() * 60 + sunset_time.minute();
 
         if current_minutes < sunset_minutes {
             let minutes_until_sunset = sunset_minutes - current_minutes;
@@ -126,7 +126,7 @@ fn generate_contextual_hint(conditions: Option<&BeachConditions>) -> Option<Stri
     }
 
     // Priority 4: Early morning (6-9am)
-    if current_hour >= 6 && current_hour < 9 {
+    if (6..9).contains(&current_hour) {
         if let Some(w) = weather {
             if w.temperature < 18.0 {
                 return Some("Warming up".to_string());
@@ -136,7 +136,7 @@ fn generate_contextual_hint(conditions: Option<&BeachConditions>) -> Option<Stri
     }
 
     // Priority 5 & 6: Peak hours (12-4pm)
-    if current_hour >= 12 && current_hour < 16 {
+    if (12..16).contains(&current_hour) {
         // Priority 5: Weekend crowds
         if is_weekend {
             return Some("Crowded now".to_string());
@@ -161,7 +161,7 @@ fn generate_contextual_hint(conditions: Option<&BeachConditions>) -> Option<Stri
     // Priority 7: Default based on conditions
     if let Some(w) = weather {
         // Evening hints
-        if current_hour >= 17 && current_hour < 21 {
+        if (17..21).contains(&current_hour) {
             return Some("Evening stroll".to_string());
         }
 
@@ -234,7 +234,10 @@ fn render_list(frame: &mut Frame, app: &App, area: Rect) {
         let (temp_str, temp_color) = match conditions.and_then(|c| c.weather.as_ref()) {
             Some(weather) => {
                 let temp = weather.temperature.round() as i32;
-                (format!("{:>3}\u{00B0}C", temp), temperature_color(weather.temperature))
+                (
+                    format!("{:>3}\u{00B0}C", temp),
+                    temperature_color(weather.temperature),
+                )
             }
             None => ("--\u{00B0}C".to_string(), Color::Gray),
         };
@@ -246,8 +249,12 @@ fn render_list(frame: &mut Frame, app: &App, area: Rect) {
         };
 
         // Get water status icon and color
-        let (water_icon_str, water_color) = match conditions.and_then(|c| c.water_quality.as_ref()) {
-            Some(wq) => (water_status_icon(&wq.status), water_status_color(&wq.status)),
+        let (water_icon_str, water_color) = match conditions.and_then(|c| c.water_quality.as_ref())
+        {
+            Some(wq) => (
+                water_status_icon(&wq.status),
+                water_status_color(&wq.status),
+            ),
             None => ("\u{26AA}", Color::Gray), // ⚪
         };
 
@@ -321,8 +328,7 @@ fn render_help(frame: &mut Frame, area: Rect) {
         Span::raw(" Quit"),
     ]);
 
-    let paragraph = Paragraph::new(help_text)
-        .style(Style::default().fg(Color::DarkGray));
+    let paragraph = Paragraph::new(help_text).style(Style::default().fg(Color::DarkGray));
 
     frame.render_widget(paragraph, area);
 }
@@ -337,7 +343,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 mod tests {
     use super::*;
     use crate::app::{App, AppState};
-    use crate::data::{BeachConditions, Weather, WaterQuality, WaterStatus, WeatherCondition};
+    use crate::data::{BeachConditions, WaterQuality, WaterStatus, Weather, WeatherCondition};
     use chrono::{NaiveDate, NaiveTime, Utc};
     use ratatui::{backend::TestBackend, Terminal};
 
@@ -408,11 +414,7 @@ mod tests {
 
         // Check that the cursor indicator is present
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // The selected item should have the cursor indicator
         assert!(
@@ -437,11 +439,7 @@ mod tests {
 
         // Check that placeholder is shown for missing weather
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Should show "--°C" for missing temperature
         assert!(
@@ -465,11 +463,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Check that at least some beaches are rendered
         // (the buffer might not be tall enough for all, but at least the first few should be there)
@@ -547,11 +541,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Check that help text elements are present
         assert!(
@@ -574,11 +564,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         assert!(
             buffer_str.contains("Vancouver Beaches"),

@@ -7,8 +7,8 @@ use crossterm::event::{KeyCode, KeyEvent};
 use std::collections::HashMap;
 
 use crate::activities::Activity;
-use crate::cli::StartupConfig;
 use crate::cache::CacheManager;
+use crate::cli::StartupConfig;
 use crate::data::{
     all_beaches, get_beach_by_id, Beach, BeachConditions, TidesClient, WaterQuality,
     WaterQualityClient, WaterQualityError, Weather, WeatherClient, WeatherError,
@@ -142,7 +142,10 @@ impl App {
         let mut water_quality_futures = Vec::new();
 
         for beach in beaches {
-            weather_futures.push(self.weather_client.fetch_weather(beach.latitude, beach.longitude));
+            weather_futures.push(
+                self.weather_client
+                    .fetch_weather(beach.latitude, beach.longitude),
+            );
             if let Some(wq_id) = beach.water_quality_id {
                 water_quality_futures.push(self.water_quality_client.fetch_water_quality(wq_id));
             }
@@ -159,7 +162,9 @@ impl App {
         // Build beach conditions for each beach
         let mut wq_index = 0;
         for (i, beach) in beaches.iter().enumerate() {
-            let weather = weather_results.get(i).and_then(|r| r.as_ref().ok().cloned());
+            let weather = weather_results
+                .get(i)
+                .and_then(|r| r.as_ref().ok().cloned());
 
             let water_quality = if beach.water_quality_id.is_some() {
                 let result = water_quality_results
@@ -178,7 +183,8 @@ impl App {
                 water_quality,
             };
 
-            self.beach_conditions.insert(beach.id.to_string(), conditions);
+            self.beach_conditions
+                .insert(beach.id.to_string(), conditions);
         }
 
         // Transition to appropriate state based on startup config
@@ -212,7 +218,10 @@ impl App {
 
         // Fetch water quality
         let water_quality = if let Some(wq_id) = beach.water_quality_id {
-            self.water_quality_client.fetch_water_quality(wq_id).await.ok()
+            self.water_quality_client
+                .fetch_water_quality(wq_id)
+                .await
+                .ok()
         } else {
             None
         };
@@ -224,7 +233,8 @@ impl App {
             water_quality,
         };
 
-        self.beach_conditions.insert(beach_id.to_string(), conditions);
+        self.beach_conditions
+            .insert(beach_id.to_string(), conditions);
     }
 
     /// Handles keyboard input and updates state accordingly
@@ -249,57 +259,53 @@ impl App {
                     self.should_quit = true;
                 }
             }
-            AppState::BeachList => {
-                match key_event.code {
-                    KeyCode::Char('q') | KeyCode::Esc => {
-                        self.should_quit = true;
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.move_selection_up();
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        self.move_selection_down();
-                    }
-                    KeyCode::Enter => {
-                        if let Some(beach) = self.selected_beach() {
-                            self.state = AppState::BeachDetail(beach.id.to_string());
-                        }
-                    }
-                    KeyCode::Char('p') => {
-                        self.state = AppState::PlanTrip;
-                    }
-                    _ => {}
+            AppState::BeachList => match key_event.code {
+                KeyCode::Char('q') | KeyCode::Esc => {
+                    self.should_quit = true;
                 }
-            }
-            AppState::BeachDetail(_) => {
-                match key_event.code {
-                    KeyCode::Char('q') => {
-                        self.should_quit = true;
-                    }
-                    KeyCode::Esc => {
-                        self.state = AppState::BeachList;
-                    }
-                    KeyCode::Char('p') => {
-                        self.state = AppState::PlanTrip;
-                    }
-                    KeyCode::Char('1') => {
-                        self.current_activity = Some(Activity::Swimming);
-                    }
-                    KeyCode::Char('2') => {
-                        self.current_activity = Some(Activity::Sunbathing);
-                    }
-                    KeyCode::Char('3') => {
-                        self.current_activity = Some(Activity::Sailing);
-                    }
-                    KeyCode::Char('4') => {
-                        self.current_activity = Some(Activity::Sunset);
-                    }
-                    KeyCode::Char('5') => {
-                        self.current_activity = Some(Activity::Peace);
-                    }
-                    _ => {}
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.move_selection_up();
                 }
-            }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.move_selection_down();
+                }
+                KeyCode::Enter => {
+                    if let Some(beach) = self.selected_beach() {
+                        self.state = AppState::BeachDetail(beach.id.to_string());
+                    }
+                }
+                KeyCode::Char('p') => {
+                    self.state = AppState::PlanTrip;
+                }
+                _ => {}
+            },
+            AppState::BeachDetail(_) => match key_event.code {
+                KeyCode::Char('q') => {
+                    self.should_quit = true;
+                }
+                KeyCode::Esc => {
+                    self.state = AppState::BeachList;
+                }
+                KeyCode::Char('p') => {
+                    self.state = AppState::PlanTrip;
+                }
+                KeyCode::Char('1') => {
+                    self.current_activity = Some(Activity::Swimming);
+                }
+                KeyCode::Char('2') => {
+                    self.current_activity = Some(Activity::Sunbathing);
+                }
+                KeyCode::Char('3') => {
+                    self.current_activity = Some(Activity::Sailing);
+                }
+                KeyCode::Char('4') => {
+                    self.current_activity = Some(Activity::Sunset);
+                }
+                KeyCode::Char('5') => {
+                    self.current_activity = Some(Activity::Peace);
+                }
+                _ => {}
+            },
             AppState::PlanTrip => {
                 match key_event.code {
                     KeyCode::Char('q') => {
@@ -948,7 +954,11 @@ mod tests {
 
         app.handle_key(key_event(KeyCode::Left));
         let hour_count = (app.plan_time_range.1 - app.plan_time_range.0 + 1) as usize;
-        assert_eq!(app.plan_cursor.1, hour_count - 1, "Should wrap to last hour");
+        assert_eq!(
+            app.plan_cursor.1,
+            hour_count - 1,
+            "Should wrap to last hour"
+        );
     }
 
     #[test]

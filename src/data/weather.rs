@@ -489,9 +489,18 @@ mod tests {
         assert_eq!(weather_code_to_condition(86), WeatherCondition::Snow);
 
         // Thunderstorm
-        assert_eq!(weather_code_to_condition(95), WeatherCondition::Thunderstorm);
-        assert_eq!(weather_code_to_condition(96), WeatherCondition::Thunderstorm);
-        assert_eq!(weather_code_to_condition(99), WeatherCondition::Thunderstorm);
+        assert_eq!(
+            weather_code_to_condition(95),
+            WeatherCondition::Thunderstorm
+        );
+        assert_eq!(
+            weather_code_to_condition(96),
+            WeatherCondition::Thunderstorm
+        );
+        assert_eq!(
+            weather_code_to_condition(99),
+            WeatherCondition::Thunderstorm
+        );
 
         // Unknown codes default to Cloudy
         assert_eq!(weather_code_to_condition(100), WeatherCondition::Cloudy);
@@ -688,7 +697,8 @@ mod tests {
     #[test]
     fn test_parse_valid_hourly_response() {
         let response: OpenMeteoResponseWithHourly =
-            serde_json::from_str(VALID_RESPONSE_WITH_HOURLY).expect("Failed to parse valid response with hourly");
+            serde_json::from_str(VALID_RESPONSE_WITH_HOURLY)
+                .expect("Failed to parse valid response with hourly");
 
         let client = WeatherClient::new();
         let weather_data = client
@@ -698,7 +708,10 @@ mod tests {
         // Verify current weather
         assert!((weather_data.current.temperature - 22.5).abs() < 0.01);
         assert!((weather_data.current.feels_like - 23.8).abs() < 0.01);
-        assert_eq!(weather_data.current.condition, WeatherCondition::PartlyCloudy);
+        assert_eq!(
+            weather_data.current.condition,
+            WeatherCondition::PartlyCloudy
+        );
         assert_eq!(weather_data.current.humidity, 65);
         assert!((weather_data.current.wind - 12.5).abs() < 0.01);
         assert!((weather_data.current.uv - 7.5).abs() < 0.01);
@@ -710,7 +723,8 @@ mod tests {
     #[test]
     fn test_hourly_forecast_fields_correctly_extracted() {
         let response: OpenMeteoResponseWithHourly =
-            serde_json::from_str(VALID_RESPONSE_WITH_HOURLY).expect("Failed to parse valid response with hourly");
+            serde_json::from_str(VALID_RESPONSE_WITH_HOURLY)
+                .expect("Failed to parse valid response with hourly");
 
         let client = WeatherClient::new();
         let weather_data = client
@@ -754,7 +768,8 @@ mod tests {
     #[test]
     fn test_hourly_array_has_expected_length() {
         let response: OpenMeteoResponseWithHourly =
-            serde_json::from_str(VALID_RESPONSE_WITH_HOURLY).expect("Failed to parse valid response with hourly");
+            serde_json::from_str(VALID_RESPONSE_WITH_HOURLY)
+                .expect("Failed to parse valid response with hourly");
 
         let client = WeatherClient::new();
         let weather_data = client
@@ -768,7 +783,13 @@ mod tests {
         for (i, hour) in weather_data.hourly.iter().enumerate().skip(1) {
             let prev_hour = &weather_data.hourly[i - 1];
             let diff = hour.time.signed_duration_since(prev_hour.time);
-            assert_eq!(diff.num_hours(), 1, "Hour {} should be 1 hour after hour {}", i, i - 1);
+            assert_eq!(
+                diff.num_hours(),
+                1,
+                "Hour {} should be 1 hour after hour {}",
+                i,
+                i - 1
+            );
         }
     }
 
@@ -834,15 +855,13 @@ mod tests {
                 sunset: NaiveTime::from_hms_opt(21, 15, 0).unwrap(),
                 fetched_at: Utc::now(),
             },
-            hourly: vec![
-                HourlyForecast {
-                    time: NaiveDateTime::parse_from_str("2024-07-15T14:00", "%Y-%m-%dT%H:%M").unwrap(),
-                    temperature: 22.5,
-                    weather_code: 2,
-                    wind_speed: 12.5,
-                    uv_index: 7.0,
-                },
-            ],
+            hourly: vec![HourlyForecast {
+                time: NaiveDateTime::parse_from_str("2024-07-15T14:00", "%Y-%m-%dT%H:%M").unwrap(),
+                temperature: 22.5,
+                weather_code: 2,
+                wind_speed: 12.5,
+                uv_index: 7.0,
+            }],
         };
 
         // Serialize to JSON
@@ -861,7 +880,10 @@ mod tests {
     fn test_parse_hourly_with_inconsistent_array_lengths() {
         // Create hourly data with inconsistent array lengths
         let hourly = HourlyWeather {
-            time: vec!["2024-07-15T00:00".to_string(), "2024-07-15T01:00".to_string()],
+            time: vec![
+                "2024-07-15T00:00".to_string(),
+                "2024-07-15T01:00".to_string(),
+            ],
             temperature_2m: vec![15.0], // Only 1 element instead of 2
             weathercode: vec![0, 0],
             windspeed_10m: vec![5.0, 5.0],

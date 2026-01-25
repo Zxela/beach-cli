@@ -15,7 +15,10 @@ fn run_cli(args: &[&str]) -> std::process::Output {
 #[test]
 fn test_help_flag_exits_successfully() {
     let output = run_cli(&["--help"]);
-    assert!(output.status.success(), "Expected --help to exit successfully");
+    assert!(
+        output.status.success(),
+        "Expected --help to exit successfully"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("vanbeach"), "Help should mention vanbeach");
     assert!(stdout.contains("plan"), "Help should mention --plan flag");
@@ -24,7 +27,10 @@ fn test_help_flag_exits_successfully() {
 #[test]
 fn test_invalid_activity_prints_error_and_exits() {
     let output = run_cli(&["--plan", "invalid_activity"]);
-    assert!(!output.status.success(), "Expected invalid activity to fail");
+    assert!(
+        !output.status.success(),
+        "Expected invalid activity to fail"
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("invalid") || stderr.contains("Invalid") || stderr.contains("unknown"),
@@ -53,9 +59,9 @@ fn test_plan_with_sunset_is_valid() {
 mod unit_tests {
     //! Unit tests for CLI parsing that don't require running the binary
 
-    use vanbeach::cli::{Cli, parse_activity_arg, StartupConfig};
-    use vanbeach::activities::Activity;
     use clap::Parser;
+    use vanbeach::activities::Activity;
+    use vanbeach::cli::{parse_activity_arg, Cli, StartupConfig};
 
     #[test]
     fn test_cli_no_args_returns_none_plan() {

@@ -88,18 +88,18 @@ pub fn render(frame: &mut Frame, app: &App, beach_id: &str) {
     // Best Window (if activity selected), Help row
     let constraints = if show_best_window {
         vec![
-            Constraint::Length(1),  // Activity selector row
-            Constraint::Min(6),     // Weather and Tides section
-            Constraint::Length(4),  // Water Quality section
-            Constraint::Length(6),  // Best Window Today section
-            Constraint::Length(2),  // Help text
+            Constraint::Length(1), // Activity selector row
+            Constraint::Min(6),    // Weather and Tides section
+            Constraint::Length(4), // Water Quality section
+            Constraint::Length(6), // Best Window Today section
+            Constraint::Length(2), // Help text
         ]
     } else {
         vec![
-            Constraint::Length(1),  // Activity selector row
-            Constraint::Min(6),     // Weather and Tides section
-            Constraint::Length(4),  // Water Quality section
-            Constraint::Length(2),  // Help text
+            Constraint::Length(1), // Activity selector row
+            Constraint::Min(6),    // Weather and Tides section
+            Constraint::Length(4), // Water Quality section
+            Constraint::Length(2), // Help text
         ]
     };
 
@@ -132,11 +132,7 @@ pub fn render(frame: &mut Frame, app: &App, beach_id: &str) {
 }
 
 /// Renders the weather section
-fn render_weather_section(
-    frame: &mut Frame,
-    area: Rect,
-    weather: Option<&crate::data::Weather>,
-) {
+fn render_weather_section(frame: &mut Frame, area: Rect, weather: Option<&crate::data::Weather>) {
     let mut lines = vec![Line::from(Span::styled(
         "WEATHER",
         Style::default()
@@ -220,11 +216,7 @@ fn render_weather_section(
 }
 
 /// Renders the tides section
-fn render_tides_section(
-    frame: &mut Frame,
-    area: Rect,
-    tides: Option<&crate::data::TideInfo>,
-) {
+fn render_tides_section(frame: &mut Frame, area: Rect, tides: Option<&crate::data::TideInfo>) {
     let mut lines = vec![Line::from(Span::styled(
         "TIDES",
         Style::default()
@@ -375,7 +367,10 @@ fn render_water_quality_section(
 /// Shows all activities with filled (selected) or empty (unselected) indicators
 fn render_activity_selector(frame: &mut Frame, area: Rect, current_activity: Option<Activity>) {
     let activities = Activity::all();
-    let mut spans = vec![Span::styled("Activity: ", Style::default().fg(colors::SECONDARY))];
+    let mut spans = vec![Span::styled(
+        "Activity: ",
+        Style::default().fg(colors::SECONDARY),
+    )];
 
     for (i, activity) in activities.iter().enumerate() {
         let is_selected = current_activity == Some(*activity);
@@ -389,7 +384,9 @@ fn render_activity_selector(frame: &mut Frame, area: Rect, current_activity: Opt
         };
 
         let style = if is_selected {
-            Style::default().fg(colors::SELECTED).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(colors::SELECTED)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(colors::SECONDARY)
         };
@@ -470,9 +467,9 @@ fn render_best_window_section(frame: &mut Frame, area: Rect, app: &App, beach_id
         )));
     } else {
         let medals = [
-            ("\u{1F947}", colors::GOLD),    // 🥇
-            ("\u{1F948}", colors::SILVER),  // 🥈
-            ("\u{1F949}", colors::BRONZE),  // 🥉
+            ("\u{1F947}", colors::GOLD),   // 🥇
+            ("\u{1F948}", colors::SILVER), // 🥈
+            ("\u{1F949}", colors::BRONZE), // 🥉
         ];
 
         for (i, window) in windows.iter().take(3).enumerate() {
@@ -558,20 +555,27 @@ fn compute_best_windows(
     }
 
     // Group adjacent high-scoring hours into windows
-    group_into_windows(&hourly_scores, activity, temp, water_status, tide_height, max_tide)
+    group_into_windows(
+        &hourly_scores,
+        activity,
+        temp,
+        water_status,
+        tide_height,
+        max_tide,
+    )
 }
 
 /// Estimates crowd level based on time of day (0.0 = empty, 1.0 = packed)
 fn estimate_crowd_level(hour: u8) -> f32 {
     match hour {
-        6..=7 => 0.1,     // Early morning - very quiet
-        8..=9 => 0.2,     // Morning - light
-        10..=11 => 0.4,   // Late morning - moderate
-        12..=14 => 0.8,   // Midday - busy
-        15..=17 => 0.6,   // Afternoon - moderate to busy
-        18..=19 => 0.4,   // Early evening - moderate
-        20..=21 => 0.2,   // Evening - light
-        _ => 0.5,         // Default
+        6..=7 => 0.1,   // Early morning - very quiet
+        8..=9 => 0.2,   // Morning - light
+        10..=11 => 0.4, // Late morning - moderate
+        12..=14 => 0.8, // Midday - busy
+        15..=17 => 0.6, // Afternoon - moderate to busy
+        18..=19 => 0.4, // Early evening - moderate
+        20..=21 => 0.2, // Evening - light
+        _ => 0.5,       // Default
     }
 }
 
@@ -830,7 +834,8 @@ mod tests {
             water_quality,
         };
 
-        app.beach_conditions.insert(beach_id.to_string(), conditions);
+        app.beach_conditions
+            .insert(beach_id.to_string(), conditions);
         app
     }
 
@@ -893,11 +898,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let content: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let content: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         assert!(!content.trim().is_empty(), "Buffer should not be empty");
     }
@@ -907,12 +908,8 @@ mod tests {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
 
-        let app = create_test_app_with_conditions(
-            "kitsilano",
-            Some(create_test_weather()),
-            None,
-            None,
-        );
+        let app =
+            create_test_app_with_conditions("kitsilano", Some(create_test_weather()), None, None);
 
         terminal
             .draw(|frame| {
@@ -921,11 +918,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let content: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let content: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         assert!(
             content.contains("22") || content.contains("WEATHER"),
@@ -938,12 +931,8 @@ mod tests {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
 
-        let app = create_test_app_with_conditions(
-            "kitsilano",
-            None,
-            Some(create_test_tides()),
-            None,
-        );
+        let app =
+            create_test_app_with_conditions("kitsilano", None, Some(create_test_tides()), None);
 
         terminal
             .draw(|frame| {
@@ -952,11 +941,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let content: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let content: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         assert!(
             content.contains("Rising") || content.contains("TIDES"),
@@ -983,11 +968,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let content: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let content: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         assert!(
             content.contains("Safe") || content.contains("WATER"),
@@ -1014,11 +995,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let content: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let content: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         assert!(
             content.contains("unavailable") || content.contains("WEATHER"),
@@ -1031,12 +1008,7 @@ mod tests {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
 
-        let app = create_test_app_with_conditions(
-            "kitsilano",
-            None,
-            None,
-            None,
-        );
+        let app = create_test_app_with_conditions("kitsilano", None, None, None);
 
         terminal
             .draw(|frame| {
@@ -1045,11 +1017,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let content: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let content: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Should still render without crashing
         assert!(!content.trim().is_empty());
@@ -1070,11 +1038,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let content: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let content: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         assert!(
             content.contains("No data") || content.contains("nonexistent"),
@@ -1113,7 +1077,12 @@ mod tests {
         // Verify status icon/text mapping for different water statuses
         let statuses = [
             (WaterStatus::Safe, "*", "Safe to swim", colors::SAFE),
-            (WaterStatus::Advisory, "!", "Advisory in effect", colors::ADVISORY),
+            (
+                WaterStatus::Advisory,
+                "!",
+                "Advisory in effect",
+                colors::ADVISORY,
+            ),
             (WaterStatus::Closed, "X", "Beach closed", colors::CLOSED),
             (WaterStatus::Unknown, "?", "Status unknown", colors::UNKNOWN),
         ];

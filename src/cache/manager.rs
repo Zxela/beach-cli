@@ -155,7 +155,9 @@ mod tests {
             value: 42,
         };
 
-        cache.write("test_key", &data, 24).expect("Write should succeed");
+        cache
+            .write("test_key", &data, 24)
+            .expect("Write should succeed");
 
         let expected_path = temp_dir.path().join("test_key.json");
         assert!(expected_path.exists(), "Cache file should exist");
@@ -185,9 +187,12 @@ mod tests {
             value: 100,
         };
 
-        cache.write("fresh_key", &data, 24).expect("Write should succeed");
+        cache
+            .write("fresh_key", &data, 24)
+            .expect("Write should succeed");
 
-        let result: CachedData<TestData> = cache.read("fresh_key").expect("Should read fresh cache");
+        let result: CachedData<TestData> =
+            cache.read("fresh_key").expect("Should read fresh cache");
 
         assert_eq!(result.data, data);
         assert!(!result.is_expired, "Fresh cache should not be expired");
@@ -202,12 +207,16 @@ mod tests {
         };
 
         // Write with 0 hour TTL - should expire immediately
-        cache.write("expired_key", &data, 0).expect("Write should succeed");
+        cache
+            .write("expired_key", &data, 0)
+            .expect("Write should succeed");
 
         // Small delay to ensure expiry
         thread::sleep(StdDuration::from_millis(10));
 
-        let result: CachedData<TestData> = cache.read("expired_key").expect("Should read expired cache");
+        let result: CachedData<TestData> = cache
+            .read("expired_key")
+            .expect("Should read expired cache");
 
         assert_eq!(result.data, data);
         assert!(result.is_expired, "Cache with 0 TTL should be expired");
@@ -221,7 +230,9 @@ mod tests {
             value: 12345,
         };
 
-        cache.write("roundtrip_key", &original, 24).expect("Write should succeed");
+        cache
+            .write("roundtrip_key", &original, 24)
+            .expect("Write should succeed");
 
         let result: CachedData<TestData> = cache.read("roundtrip_key").expect("Should read cache");
 
@@ -239,10 +250,15 @@ mod tests {
             value: 1,
         };
 
-        cache.write("nested_key", &data, 24).expect("Write should succeed");
+        cache
+            .write("nested_key", &data, 24)
+            .expect("Write should succeed");
 
         assert!(nested_path.exists(), "Nested directory should be created");
-        assert!(nested_path.join("nested_key.json").exists(), "Cache file should exist");
+        assert!(
+            nested_path.join("nested_key.json").exists(),
+            "Cache file should exist"
+        );
     }
 
     #[test]
@@ -254,13 +270,21 @@ mod tests {
         };
 
         let before = Utc::now();
-        cache.write("timestamp_key", &data, 24).expect("Write should succeed");
+        cache
+            .write("timestamp_key", &data, 24)
+            .expect("Write should succeed");
         let after = Utc::now();
 
         let result: CachedData<TestData> = cache.read("timestamp_key").expect("Should read cache");
 
-        assert!(result.cached_at >= before, "cached_at should be after write started");
-        assert!(result.cached_at <= after, "cached_at should be before write finished");
+        assert!(
+            result.cached_at >= before,
+            "cached_at should be after write started"
+        );
+        assert!(
+            result.cached_at <= after,
+            "cached_at should be before write finished"
+        );
     }
 
     #[test]
@@ -287,8 +311,12 @@ mod tests {
             value: 2,
         };
 
-        cache.write("overwrite_key", &data1, 24).expect("First write should succeed");
-        cache.write("overwrite_key", &data2, 24).expect("Second write should succeed");
+        cache
+            .write("overwrite_key", &data1, 24)
+            .expect("First write should succeed");
+        cache
+            .write("overwrite_key", &data2, 24)
+            .expect("Second write should succeed");
 
         let result: CachedData<TestData> = cache.read("overwrite_key").expect("Should read cache");
 

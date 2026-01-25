@@ -202,8 +202,14 @@ mod tests {
         assert_eq!(deserialized.humidity, 65);
         assert!((deserialized.wind - 12.5).abs() < 0.01);
         assert!((deserialized.uv - 6.0).abs() < 0.01);
-        assert_eq!(deserialized.sunrise, NaiveTime::from_hms_opt(5, 30, 0).unwrap());
-        assert_eq!(deserialized.sunset, NaiveTime::from_hms_opt(21, 15, 0).unwrap());
+        assert_eq!(
+            deserialized.sunrise,
+            NaiveTime::from_hms_opt(5, 30, 0).unwrap()
+        );
+        assert_eq!(
+            deserialized.sunset,
+            NaiveTime::from_hms_opt(21, 15, 0).unwrap()
+        );
     }
 
     #[test]

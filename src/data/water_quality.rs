@@ -97,7 +97,10 @@ impl WaterQualityClient {
 
     /// Generates a cache key for a beach
     fn cache_key(beach_name: &str) -> String {
-        format!("water_quality_{}", beach_name.replace(' ', "_").to_lowercase())
+        format!(
+            "water_quality_{}",
+            beach_name.replace(' ', "_").to_lowercase()
+        )
     }
 
     /// Fetches water quality data for a specific beach
@@ -115,7 +118,10 @@ impl WaterQualityClient {
     /// - If cache is expired or missing, fetches from API
     /// - On API failure, returns expired cache data if available
     /// - Returns Unknown status if no data is available or data is older than 7 days
-    pub async fn fetch_water_quality(&self, beach_name: &str) -> Result<WaterQuality, WaterQualityError> {
+    pub async fn fetch_water_quality(
+        &self,
+        beach_name: &str,
+    ) -> Result<WaterQuality, WaterQualityError> {
         let cache_key = Self::cache_key(beach_name);
 
         // Check cache first
@@ -156,7 +162,8 @@ impl WaterQualityClient {
             urlencoded(beach_name)
         );
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .get(&url)
             .send()
             .await?
@@ -172,13 +179,16 @@ impl WaterQualityClient {
     }
 
     /// Parses an API record into WaterQuality
-    fn parse_record(&self, record: &WaterQualityRecord, beach_name: &str) -> Result<WaterQuality, WaterQualityError> {
+    fn parse_record(
+        &self,
+        record: &WaterQualityRecord,
+        beach_name: &str,
+    ) -> Result<WaterQuality, WaterQualityError> {
         // Parse sample date
         let sample_date = match &record.sample_date {
-            Some(date_str) => {
-                NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-                    .map_err(|e| WaterQualityError::ParseError(format!("Invalid date format: {}", e)))?
-            }
+            Some(date_str) => NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map_err(|e| {
+                WaterQualityError::ParseError(format!("Invalid date format: {}", e))
+            })?,
             None => return Ok(self.create_unknown_status(beach_name)),
         };
 
@@ -261,8 +271,7 @@ impl Default for WaterQualityClient {
 
 /// URL-encodes a string for use in query parameters
 fn urlencoded(s: &str) -> String {
-    s.replace(' ', "%20")
-        .replace('\'', "%27")
+    s.replace(' ', "%20").replace('\'', "%27")
 }
 
 #[cfg(test)]
@@ -292,9 +301,18 @@ mod tests {
         let client = WaterQualityClient::new();
 
         // 200-400 is Advisory
-        assert_eq!(client.determine_status(Some(200), None), WaterStatus::Advisory);
-        assert_eq!(client.determine_status(Some(300), None), WaterStatus::Advisory);
-        assert_eq!(client.determine_status(Some(400), None), WaterStatus::Advisory);
+        assert_eq!(
+            client.determine_status(Some(200), None),
+            WaterStatus::Advisory
+        );
+        assert_eq!(
+            client.determine_status(Some(300), None),
+            WaterStatus::Advisory
+        );
+        assert_eq!(
+            client.determine_status(Some(400), None),
+            WaterStatus::Advisory
+        );
     }
 
     #[test]
@@ -302,9 +320,18 @@ mod tests {
         let client = WaterQualityClient::new();
 
         // Above 400 is Closed
-        assert_eq!(client.determine_status(Some(401), None), WaterStatus::Closed);
-        assert_eq!(client.determine_status(Some(500), None), WaterStatus::Closed);
-        assert_eq!(client.determine_status(Some(1000), None), WaterStatus::Closed);
+        assert_eq!(
+            client.determine_status(Some(401), None),
+            WaterStatus::Closed
+        );
+        assert_eq!(
+            client.determine_status(Some(500), None),
+            WaterStatus::Closed
+        );
+        assert_eq!(
+            client.determine_status(Some(1000), None),
+            WaterStatus::Closed
+        );
     }
 
     #[test]
@@ -312,9 +339,18 @@ mod tests {
         let client = WaterQualityClient::new();
 
         // Explicit closure overrides E. coli reading
-        assert_eq!(client.determine_status(Some(50), Some("Beach closed due to storm")), WaterStatus::Closed);
-        assert_eq!(client.determine_status(Some(100), Some("Closure in effect")), WaterStatus::Closed);
-        assert_eq!(client.determine_status(None, Some("Beach CLOSED")), WaterStatus::Closed);
+        assert_eq!(
+            client.determine_status(Some(50), Some("Beach closed due to storm")),
+            WaterStatus::Closed
+        );
+        assert_eq!(
+            client.determine_status(Some(100), Some("Closure in effect")),
+            WaterStatus::Closed
+        );
+        assert_eq!(
+            client.determine_status(None, Some("Beach CLOSED")),
+            WaterStatus::Closed
+        );
     }
 
     #[test]
@@ -322,7 +358,10 @@ mod tests {
         let client = WaterQualityClient::new();
 
         assert_eq!(client.determine_status(None, None), WaterStatus::Unknown);
-        assert_eq!(client.determine_status(None, Some("Some advisory")), WaterStatus::Unknown);
+        assert_eq!(
+            client.determine_status(None, Some("Some advisory")),
+            WaterStatus::Unknown
+        );
     }
 
     #[test]
@@ -359,7 +398,10 @@ mod tests {
         let result = client.parse_record(&record, "English Bay").unwrap();
         assert_eq!(result.status, WaterStatus::Advisory);
         assert_eq!(result.ecoli_count, Some(250));
-        assert_eq!(result.advisory_reason, Some("High bacteria levels".to_string()));
+        assert_eq!(
+            result.advisory_reason,
+            Some("High bacteria levels".to_string())
+        );
     }
 
     #[test]
@@ -380,9 +422,18 @@ mod tests {
 
     #[test]
     fn test_cache_key_generation() {
-        assert_eq!(WaterQualityClient::cache_key("Kitsilano Beach"), "water_quality_kitsilano_beach");
-        assert_eq!(WaterQualityClient::cache_key("English Bay"), "water_quality_english_bay");
-        assert_eq!(WaterQualityClient::cache_key("Spanish Banks East"), "water_quality_spanish_banks_east");
+        assert_eq!(
+            WaterQualityClient::cache_key("Kitsilano Beach"),
+            "water_quality_kitsilano_beach"
+        );
+        assert_eq!(
+            WaterQualityClient::cache_key("English Bay"),
+            "water_quality_english_bay"
+        );
+        assert_eq!(
+            WaterQualityClient::cache_key("Spanish Banks East"),
+            "water_quality_spanish_banks_east"
+        );
     }
 
     #[test]
@@ -405,7 +456,9 @@ mod tests {
         };
 
         let cache_key = WaterQualityClient::cache_key("test-beach");
-        cache.write(&cache_key, &water_quality, CACHE_TTL_HOURS).unwrap();
+        cache
+            .write(&cache_key, &water_quality, CACHE_TTL_HOURS)
+            .unwrap();
 
         let cached = cache.read::<WaterQuality>(&cache_key).unwrap();
         assert_eq!(cached.data.status, WaterStatus::Safe);
@@ -443,7 +496,9 @@ mod tests {
         };
 
         let cache_key = WaterQualityClient::cache_key("cached-beach");
-        cache.write(&cache_key, &water_quality, CACHE_TTL_HOURS).unwrap();
+        cache
+            .write(&cache_key, &water_quality, CACHE_TTL_HOURS)
+            .unwrap();
 
         // Create client with cache - it should return cached data without hitting API
         let client = WaterQualityClient::with_cache(cache);
