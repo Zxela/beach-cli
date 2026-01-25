@@ -463,10 +463,19 @@ fn render_best_window_section(frame: &mut Frame, area: Rect, app: &App, beach_id
     let windows = compute_best_windows(activity, conditions);
 
     if windows.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "No suitable time windows found",
-            Style::default().fg(colors::SECONDARY),
-        )));
+        // Check if it's because all times passed
+        let current_hour = Local::now().hour() as u8;
+        if current_hour >= 21 {
+            lines.push(Line::from(Span::styled(
+                "Best times have passed for today",
+                Style::default().fg(colors::SECONDARY),
+            )));
+        } else {
+            lines.push(Line::from(Span::styled(
+                "No suitable time windows found",
+                Style::default().fg(colors::SECONDARY),
+            )));
+        }
     } else {
         let medals = [
             ("\u{1F947}", colors::GOLD),   // 🥇
