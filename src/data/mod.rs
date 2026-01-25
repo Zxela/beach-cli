@@ -11,7 +11,8 @@ pub mod weather;
 pub use beach::{all_beaches, get_beach_by_id};
 pub use tides::TidesClient;
 pub use water_quality::{WaterQualityClient, WaterQualityError};
-pub use weather::{WeatherClient, WeatherError};
+#[allow(unused_imports)]
+pub use weather::{HourlyForecast, WeatherClient, WeatherData, WeatherError};
 
 use chrono::{DateTime, Local, NaiveDate, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
