@@ -1,0 +1,27 @@
+{
+  "session_id": "tui-layout-redesign-01cd8314",
+  "branch": "create/tui-layout-redesign-01cd8314",
+  "worktree": "../weather-cli-create-tui-layout-redesign-01cd8314",
+  "feature": "tui-layout-redesign",
+  "created_at": "2026-01-31T11:30:00Z",
+  "phase": "implementing",
+  "tasks": {
+    "101": { "status": "pending", "file": "docs/tasks/101-hourly-forecast-data-model.md" },
+    "102": { "status": "pending", "file": "docs/tasks/102-weather-api-hourly-parsing.md" },
+    "103": { "status": "pending", "file": "docs/tasks/103-app-state-scroll-toggle.md" },
+    "104": { "status": "pending", "file": "docs/tasks/104-vertical-layout-refactor.md" },
+    "105": { "status": "pending", "file": "docs/tasks/105-scroll-support.md" },
+    "106": { "status": "pending", "file": "docs/tasks/106-fullwidth-tide-sparkline.md" },
+    "107": { "status": "pending", "file": "docs/tasks/107-expanded-tide-chart.md" },
+    "108": { "status": "pending", "file": "docs/tasks/108-hourly-forecast-section.md" },
+    "109": { "status": "pending", "file": "docs/tasks/109-integration-tests.md" }
+  },
+  "current_task": null,
+  "config": {
+    "auto_mode": true,
+    "retries": {
+      "same_agent": 2,
+      "fresh_agent": 1
+    }
+  }
+}
