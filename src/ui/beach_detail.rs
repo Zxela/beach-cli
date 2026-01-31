@@ -346,7 +346,7 @@ fn render_tides_section_with_offset(
     tides: Option<&crate::data::TideInfo>,
     offset: u16,
 ) {
-    let lines = build_tides_lines(tides);
+    let lines = build_tides_lines_with_width(tides, area.width as usize);
     let paragraph = Paragraph::new(lines).scroll((offset, 0));
     frame.render_widget(paragraph, area);
 }
@@ -459,8 +459,14 @@ fn build_weather_lines(weather: Option<&crate::data::Weather>) -> Vec<Line<'stat
     lines
 }
 
-/// Builds the lines for the tides section
+/// Builds the lines for the tides section (default width of 16 chars)
+#[allow(dead_code)]
 fn build_tides_lines(tides: Option<&crate::data::TideInfo>) -> Vec<Line<'static>> {
+    build_tides_lines_with_width(tides, 16)
+}
+
+/// Builds the lines for the tides section with configurable width
+fn build_tides_lines_with_width(tides: Option<&crate::data::TideInfo>, width: usize) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(Span::styled(
         "TIDES",
         Style::default()
@@ -490,18 +496,28 @@ fn build_tides_lines(tides: Option<&crate::data::TideInfo>) -> Vec<Line<'static>
             ]);
             lines.push(state_line);
 
-            // Generate tide chart
-            let heights = t.hourly_heights(4.8);
+            // Calculate sparkline width (full width minus some padding)
+            // Reserve space for potential padding (minimum 16, maximum width - 2)
+            let sparkline_width = width.saturating_sub(2).max(16);
+
+            // Generate tide heights and interpolate to fill sparkline width
+            let base_heights = t.hourly_heights(4.8);
+            let interpolated_heights = interpolate_heights(&base_heights, sparkline_width);
+
             let current_hour = Local::now().hour() as usize;
+            // Calculate which sparkline index corresponds to current hour
+            // Hours 6-21 (16 hours) mapped to sparkline_width characters
             let current_index = if (6..=21).contains(&current_hour) {
-                Some(current_hour - 6)
+                let hour_offset = current_hour - 6;
+                // Map hour offset (0-15) to sparkline index (0 to sparkline_width-1)
+                Some((hour_offset * sparkline_width) / 16)
             } else {
                 None
             };
 
             // Build sparkline with current hour highlighted
             let mut chart_spans: Vec<Span> = Vec::new();
-            for (i, height) in heights.iter().enumerate() {
+            for (i, height) in interpolated_heights.iter().enumerate() {
                 let block = height_to_block(*height, 4.8);
                 let style = if current_index == Some(i) {
                     Style::default()
@@ -514,13 +530,14 @@ fn build_tides_lines(tides: Option<&crate::data::TideInfo>) -> Vec<Line<'static>
             }
             lines.push(Line::from(chart_spans));
 
-            // Hour labels under chart
+            // Hour labels spanning full width: 6AM, 9AM, 12PM, 3PM, 6PM, 9PM, 12AM
+            let time_labels = build_time_labels(sparkline_width);
             lines.push(Line::from(Span::styled(
-                "6    9   12   15   18  21".to_string(),
+                time_labels,
                 Style::default().fg(colors::SECONDARY),
             )));
 
-            // Next high/low on same line
+            // Next high/low times and expand hint on same line
             let mut next_events: Vec<Span> = Vec::new();
             if let Some(ref high) = t.next_high {
                 next_events.push(Span::styled("H:".to_string(), Style::default().fg(colors::SECONDARY)));
@@ -537,9 +554,15 @@ fn build_tides_lines(tides: Option<&crate::data::TideInfo>) -> Vec<Line<'static>
                     Style::default().fg(colors::PRIMARY),
                 ));
             }
+            // Add expand hint
             if !next_events.is_empty() {
-                lines.push(Line::from(next_events));
+                next_events.push(Span::raw("  "));
             }
+            next_events.push(Span::styled(
+                "[t] expand".to_string(),
+                Style::default().fg(colors::SECONDARY),
+            ));
+            lines.push(Line::from(next_events));
         }
         None => {
             lines.push(Line::from(Span::styled(
@@ -550,6 +573,76 @@ fn build_tides_lines(tides: Option<&crate::data::TideInfo>) -> Vec<Line<'static>
     }
 
     lines
+}
+
+/// Interpolates tide heights to fill the target width
+fn interpolate_heights(heights: &[f64], target_width: usize) -> Vec<f64> {
+    if heights.is_empty() {
+        return vec![0.0; target_width];
+    }
+    if target_width <= heights.len() {
+        // If target is smaller or equal, just return first target_width values
+        return heights.iter().take(target_width).copied().collect();
+    }
+
+    let mut result = Vec::with_capacity(target_width);
+    let source_len = heights.len();
+
+    for i in 0..target_width {
+        // Map target index to source position (0.0 to source_len-1)
+        let source_pos = (i as f64 * (source_len - 1) as f64) / (target_width - 1) as f64;
+        let lower_idx = source_pos.floor() as usize;
+        let upper_idx = (lower_idx + 1).min(source_len - 1);
+        let fraction = source_pos - lower_idx as f64;
+
+        // Linear interpolation between adjacent heights
+        let interpolated = heights[lower_idx] * (1.0 - fraction) + heights[upper_idx] * fraction;
+        result.push(interpolated);
+    }
+
+    result
+}
+
+/// Builds time labels spanning the sparkline width
+/// Labels: 6AM, 9AM, 12PM, 3PM, 6PM, 9PM, 12AM (representing hours 6-21 + midnight)
+fn build_time_labels(width: usize) -> String {
+    if width < 20 {
+        // For narrow widths, use abbreviated labels
+        return "6   9  12  15  18  21".to_string();
+    }
+
+    // Time markers at hours 6, 9, 12, 15, 18, 21 (plus implicit end at 24/midnight)
+    // These correspond to positions 0, 3/16, 6/16, 9/16, 12/16, 15/16 of the sparkline
+    let labels = ["6AM", "9AM", "12PM", "3PM", "6PM", "9PM", "12AM"];
+    let positions: [f64; 7] = [0.0, 3.0/16.0, 6.0/16.0, 9.0/16.0, 12.0/16.0, 15.0/16.0, 1.0];
+
+    let mut result = vec![' '; width];
+
+    for (label, &pos) in labels.iter().zip(positions.iter()) {
+        let char_pos = ((pos * (width - 1) as f64).round() as usize).min(width - 1);
+        let label_chars: Vec<char> = label.chars().collect();
+        let label_len = label_chars.len();
+
+        // For labels at the end, right-align them; otherwise center
+        let start = if pos >= 0.99 {
+            // Right-align the last label
+            width.saturating_sub(label_len)
+        } else {
+            // Center the label on the position
+            char_pos.saturating_sub(label_len / 2)
+        };
+
+        // Make sure we don't exceed width
+        let end = (start + label_len).min(width);
+
+        for (i, ch) in label_chars.iter().enumerate() {
+            if start + i < end {
+                result[start + i] = *ch;
+            }
+        }
+    }
+
+    result.iter().collect()
 }
 
 /// Builds the lines for the water quality section
@@ -2471,5 +2564,114 @@ mod tests {
         assert!(result.is_some(), "Fully visible section should return Some");
         let rect = result.unwrap();
         assert_eq!(rect.height, 5, "Should show full section height");
+    }
+
+    #[test]
+    fn test_interpolate_heights_with_larger_target() {
+        let heights = vec![1.0, 2.0, 3.0, 4.0];
+        let result = interpolate_heights(&heights, 7);
+        assert_eq!(result.len(), 7, "Should return target_width elements");
+        assert!((result[0] - 1.0).abs() < 0.001, "First element should match");
+        assert!((result[6] - 4.0).abs() < 0.001, "Last element should match");
+    }
+
+    #[test]
+    fn test_interpolate_heights_with_smaller_target() {
+        let heights = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let result = interpolate_heights(&heights, 3);
+        assert_eq!(result.len(), 3, "Should return target_width elements");
+    }
+
+    #[test]
+    fn test_interpolate_heights_empty_input() {
+        let heights: Vec<f64> = vec![];
+        let result = interpolate_heights(&heights, 10);
+        assert_eq!(result.len(), 10, "Should return target_width zeros");
+        assert!(result.iter().all(|&h| h == 0.0), "All values should be 0.0");
+    }
+
+    #[test]
+    fn test_build_time_labels_wide_width() {
+        let labels = build_time_labels(60);
+        assert!(labels.len() <= 60, "Labels should not exceed width");
+        assert!(labels.contains("6AM"), "Should contain 6AM");
+        assert!(labels.contains("12PM"), "Should contain 12PM");
+        assert!(labels.contains("12AM"), "Should contain 12AM");
+    }
+
+    #[test]
+    fn test_build_time_labels_narrow_width() {
+        let labels = build_time_labels(15);
+        // For narrow widths, we use abbreviated labels
+        assert!(labels.contains("6"), "Should contain hour 6");
+    }
+
+    #[test]
+    fn test_build_tides_lines_with_width_contains_expand_hint() {
+        let tides = create_test_tides();
+        let lines = build_tides_lines_with_width(Some(&tides), 60);
+
+        // Find the line containing the expand hint
+        let has_expand_hint = lines.iter().any(|line| {
+            line.spans.iter().any(|span| span.content.contains("[t] expand"))
+        });
+        assert!(has_expand_hint, "Should contain [t] expand hint");
+    }
+
+    #[test]
+    fn test_build_tides_lines_with_width_sparkline_scales() {
+        let tides = create_test_tides();
+
+        // Test with narrow width
+        let lines_narrow = build_tides_lines_with_width(Some(&tides), 20);
+        // Test with wide width
+        let lines_wide = build_tides_lines_with_width(Some(&tides), 80);
+
+        // Find the sparkline line (should be the third line, after header and state)
+        // The sparkline is composed of individual character spans
+        let sparkline_narrow = lines_narrow.get(2);
+        let sparkline_wide = lines_wide.get(2);
+
+        assert!(sparkline_narrow.is_some(), "Narrow sparkline should exist");
+        assert!(sparkline_wide.is_some(), "Wide sparkline should exist");
+
+        // Wide sparkline should have more spans (characters)
+        let narrow_len = sparkline_narrow.unwrap().spans.len();
+        let wide_len = sparkline_wide.unwrap().spans.len();
+
+        assert!(
+            wide_len > narrow_len,
+            "Wide sparkline ({}) should have more characters than narrow ({})",
+            wide_len,
+            narrow_len
+        );
+    }
+
+    #[test]
+    fn test_build_tides_lines_with_width_time_markers_present() {
+        let tides = create_test_tides();
+        let lines = build_tides_lines_with_width(Some(&tides), 60);
+
+        // The time labels line should be the 4th line (index 3)
+        let time_line = lines.get(3);
+        assert!(time_line.is_some(), "Time labels line should exist");
+
+        let time_content: String = time_line.unwrap().spans.iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+
+        // Should contain time markers
+        assert!(time_content.contains("6AM") || time_content.contains("6"), "Should have 6AM marker");
+    }
+
+    #[test]
+    fn test_build_tides_lines_without_tides_data() {
+        let lines = build_tides_lines_with_width(None, 60);
+        assert!(!lines.is_empty(), "Should return at least header");
+
+        let has_unavailable = lines.iter().any(|line| {
+            line.spans.iter().any(|span| span.content.contains("unavailable"))
+        });
+        assert!(has_unavailable, "Should show unavailable message when no tides data");
     }
 }
