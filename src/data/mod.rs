@@ -124,6 +124,31 @@ pub struct WaterQuality {
     pub fetched_at: DateTime<Utc>,
 }
 
+impl WaterQuality {
+    /// Returns true if the water quality data is stale (sample > 48 hours old)
+    pub fn is_stale(&self) -> bool {
+        let today = chrono::Local::now().date_naive();
+        let days_old = (today - self.sample_date).num_days();
+        days_old > 2
+    }
+
+    /// Returns true if the water quality data is very stale (sample > 7 days old)
+    pub fn is_very_stale(&self) -> bool {
+        let today = chrono::Local::now().date_naive();
+        let days_old = (today - self.sample_date).num_days();
+        days_old > 7
+    }
+
+    /// Returns the effective status, downgrading to Unknown if stale
+    pub fn effective_status(&self) -> WaterStatus {
+        if self.is_stale() {
+            WaterStatus::Unknown
+        } else {
+            self.status
+        }
+    }
+}
+
 /// Water quality status levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WaterStatus {
@@ -337,5 +362,66 @@ mod tests {
         assert!(conditions.weather.is_none());
         assert!(conditions.tides.is_none());
         assert!(conditions.water_quality.is_none());
+    }
+
+    #[test]
+    fn test_water_quality_is_stale_after_48_hours() {
+        let today = chrono::Local::now().date_naive();
+        let old_date = today - chrono::Duration::days(3); // 3 days ago
+        let wq = WaterQuality {
+            status: WaterStatus::Safe,
+            ecoli_count: Some(50),
+            sample_date: old_date,
+            advisory_reason: None,
+            fetched_at: Utc::now(),
+        };
+
+        assert!(wq.is_stale(), "Water quality from 3+ days ago should be stale");
+    }
+
+    #[test]
+    fn test_water_quality_not_stale_within_48_hours() {
+        let today = chrono::Local::now().date_naive();
+        let recent_date = today - chrono::Duration::days(1); // Yesterday
+        let wq = WaterQuality {
+            status: WaterStatus::Safe,
+            ecoli_count: Some(50),
+            sample_date: recent_date,
+            advisory_reason: None,
+            fetched_at: Utc::now(),
+        };
+
+        assert!(!wq.is_stale(), "Water quality from yesterday should not be stale");
+    }
+
+    #[test]
+    fn test_water_quality_effective_status_downgrades_when_stale() {
+        let today = chrono::Local::now().date_naive();
+        let old_date = today - chrono::Duration::days(5);
+        let wq = WaterQuality {
+            status: WaterStatus::Safe,
+            ecoli_count: Some(50),
+            sample_date: old_date,
+            advisory_reason: None,
+            fetched_at: Utc::now(),
+        };
+
+        assert_eq!(wq.effective_status(), WaterStatus::Unknown,
+            "Stale safe water should downgrade to unknown");
+    }
+
+    #[test]
+    fn test_water_quality_effective_status_keeps_fresh() {
+        let today = chrono::Local::now().date_naive();
+        let wq = WaterQuality {
+            status: WaterStatus::Safe,
+            ecoli_count: Some(50),
+            sample_date: today,
+            advisory_reason: None,
+            fetched_at: Utc::now(),
+        };
+
+        assert_eq!(wq.effective_status(), WaterStatus::Safe,
+            "Fresh safe water should stay safe");
     }
 }
