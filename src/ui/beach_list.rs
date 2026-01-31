@@ -78,7 +78,11 @@ fn height_to_block(height: f64, max_height: f64) -> char {
 }
 
 /// Generates a sparkline string for tide heights
-fn generate_tide_sparkline(heights: &[f64], max_height: f64, current_hour_index: Option<usize>) -> Vec<Span<'static>> {
+fn generate_tide_sparkline(
+    heights: &[f64],
+    max_height: f64,
+    current_hour_index: Option<usize>,
+) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
 
     for (i, height) in heights.iter().enumerate() {
@@ -397,7 +401,10 @@ fn render_smart_header(frame: &mut Frame, app: &App, area: Rect) {
             Span::raw("  "),
             Span::styled(current_temp, Style::default().fg(Color::Yellow)),
         ]),
-        Line::from(Span::styled(separator, Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled(
+            separator,
+            Style::default().fg(Color::DarkGray),
+        )),
     ];
 
     // Best beach recommendation
@@ -559,7 +566,10 @@ fn render_list(frame: &mut Frame, app: &App, area: Rect) {
                     Style::default().fg(score_color),
                 ));
             } else {
-                spans.push(Span::styled("--:-- (--)", Style::default().fg(Color::DarkGray)));
+                spans.push(Span::styled(
+                    "--:-- (--)",
+                    Style::default().fg(Color::DarkGray),
+                ));
             }
         }
 
@@ -617,7 +627,10 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
         } else {
             format!(" │ Data: {}h ago", elapsed.num_hours())
         };
-        help_spans.push(Span::styled(freshness_text, Style::default().fg(Color::DarkGray)));
+        help_spans.push(Span::styled(
+            freshness_text,
+            Style::default().fg(Color::DarkGray),
+        ));
     }
 
     let help_text = Line::from(help_spans);

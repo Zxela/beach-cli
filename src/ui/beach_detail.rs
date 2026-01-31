@@ -13,7 +13,9 @@ use ratatui::{
 
 use chrono::{Local, Timelike};
 
-use crate::activities::{get_profile, sunset_time_scorer_dynamic, Activity, ScoreFactors, TimeSlotScore};
+use crate::activities::{
+    get_profile, sunset_time_scorer_dynamic, Activity, ScoreFactors, TimeSlotScore,
+};
 use crate::app::App;
 use crate::data::{TideState, WaterStatus, WeatherCondition};
 
@@ -272,7 +274,9 @@ fn render_tides_section(frame: &mut Frame, area: Rect, tides: Option<&crate::dat
             for (i, height) in heights.iter().enumerate() {
                 let block = height_to_block(*height, 4.8);
                 let style = if current_index == Some(i) {
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(colors::RISING)
                 };
@@ -573,12 +577,20 @@ fn render_factor_bars(factors: &ScoreFactors, activity: Activity) -> Line<'stati
     };
 
     // Temperature - always shown
-    spans.extend(make_bar(factors.temperature, "T:", score_color(factors.temperature)));
+    spans.extend(make_bar(
+        factors.temperature,
+        "T:",
+        score_color(factors.temperature),
+    ));
 
     // Activity-specific factors
     match activity {
         Activity::Swimming => {
-            spans.extend(make_bar(factors.water_quality, "W:", score_color(factors.water_quality)));
+            spans.extend(make_bar(
+                factors.water_quality,
+                "W:",
+                score_color(factors.water_quality),
+            ));
             spans.extend(make_bar(factors.tide, "Ti:", score_color(factors.tide)));
         }
         Activity::Sailing => {
@@ -590,7 +602,11 @@ fn render_factor_bars(factors: &ScoreFactors, activity: Activity) -> Line<'stati
             spans.extend(make_bar(factors.wind, "Wi:", score_color(factors.wind)));
         }
         Activity::Sunset => {
-            spans.extend(make_bar(factors.time_of_day, "Ti:", score_color(factors.time_of_day)));
+            spans.extend(make_bar(
+                factors.time_of_day,
+                "Ti:",
+                score_color(factors.time_of_day),
+            ));
         }
         Activity::Peace => {
             spans.extend(make_bar(factors.crowd, "Cr:", score_color(factors.crowd)));
@@ -1425,6 +1441,9 @@ mod tests {
     fn test_sunset_activity_returns_empty_when_past_sunset() {
         let conditions = create_test_conditions_with_sunset(17, 0);
         let windows = compute_best_windows_from_hour(Activity::Sunset, &conditions, 18);
-        assert!(windows.is_empty(), "Should have no windows when starting after sunset");
+        assert!(
+            windows.is_empty(),
+            "Should have no windows when starting after sunset"
+        );
     }
 }

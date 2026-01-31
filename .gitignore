@@ -14,3 +14,4 @@ Thumbs.db
 
 # Workflow state (session-specific)
 state.json
+dist/

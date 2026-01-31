@@ -31,26 +31,29 @@ pub fn render(frame: &mut Frame) {
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("Navigation", Style::default().add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "Navigation",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
         help_line("↑/k, ↓/j", "Move selection up/down"),
         help_line("Enter", "Open beach details"),
         help_line("Esc", "Go back / Close"),
         help_line("q", "Quit application"),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("Activities", Style::default().add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "Activities",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
         help_line("1", "Swimming"),
         help_line("2", "Sunbathing"),
         help_line("3", "Sailing"),
         help_line("4", "Sunset viewing"),
         help_line("5", "Peace & quiet"),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("Other", Style::default().add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "Other",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
         help_line("p", "Plan trip grid"),
         help_line("r", "Refresh data"),
         help_line("?", "Toggle this help"),
@@ -76,10 +79,7 @@ pub fn render(frame: &mut Frame) {
 /// Creates a help line with key and description
 fn help_line(key: &str, description: &str) -> Line<'static> {
     Line::from(vec![
-        Span::styled(
-            format!("  {:<12}", key),
-            Style::default().fg(Color::Yellow),
-        ),
+        Span::styled(format!("  {:<12}", key), Style::default().fg(Color::Yellow)),
         Span::raw(description.to_string()),
     ])
 }
@@ -127,6 +127,9 @@ mod tests {
         let content: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         assert!(content.contains("Help"), "Should render help title");
-        assert!(content.contains("Navigation"), "Should show navigation section");
+        assert!(
+            content.contains("Navigation"),
+            "Should show navigation section"
+        );
     }
 }

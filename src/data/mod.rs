@@ -406,7 +406,10 @@ mod tests {
             fetched_at: Utc::now(),
         };
 
-        assert!(wq.is_stale(), "Water quality from 3+ days ago should be stale");
+        assert!(
+            wq.is_stale(),
+            "Water quality from 3+ days ago should be stale"
+        );
     }
 
     #[test]
@@ -421,7 +424,10 @@ mod tests {
             fetched_at: Utc::now(),
         };
 
-        assert!(!wq.is_stale(), "Water quality from yesterday should not be stale");
+        assert!(
+            !wq.is_stale(),
+            "Water quality from yesterday should not be stale"
+        );
     }
 
     #[test]
@@ -436,8 +442,11 @@ mod tests {
             fetched_at: Utc::now(),
         };
 
-        assert_eq!(wq.effective_status(), WaterStatus::Unknown,
-            "Stale safe water should downgrade to unknown");
+        assert_eq!(
+            wq.effective_status(),
+            WaterStatus::Unknown,
+            "Stale safe water should downgrade to unknown"
+        );
     }
 
     #[test]
@@ -451,8 +460,11 @@ mod tests {
             fetched_at: Utc::now(),
         };
 
-        assert_eq!(wq.effective_status(), WaterStatus::Safe,
-            "Fresh safe water should stay safe");
+        assert_eq!(
+            wq.effective_status(),
+            WaterStatus::Safe,
+            "Fresh safe water should stay safe"
+        );
     }
 
     #[test]

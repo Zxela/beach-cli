@@ -16,10 +16,7 @@ use crate::data::{TideInfo, WaterQuality, Weather};
 #[derive(Debug, Clone)]
 pub enum RefreshMessage {
     /// Weather data updated for a beach
-    WeatherUpdated {
-        beach_id: String,
-        weather: Weather,
-    },
+    WeatherUpdated { beach_id: String, weather: Weather },
     /// Water quality data updated for a beach
     WaterQualityUpdated {
         beach_id: String,
@@ -49,7 +46,7 @@ pub struct RefreshConfig {
 impl Default for RefreshConfig {
     fn default() -> Self {
         Self {
-            weather_interval: Duration::from_secs(300),      // 5 minutes
+            weather_interval: Duration::from_secs(300), // 5 minutes
             water_quality_interval: Duration::from_secs(1800), // 30 minutes
             enabled: true,
         }
