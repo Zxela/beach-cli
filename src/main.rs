@@ -41,9 +41,9 @@ fn setup_panic_hook() {
 }
 
 /// Renders the UI based on the current application state
-fn render_ui(frame: &mut ratatui::Frame, app: &App) {
+fn render_ui(frame: &mut ratatui::Frame, app: &mut App) {
     // Render the main view
-    match &app.state {
+    match &app.state.clone() {
         AppState::Loading => {
             render_loading(frame);
         }
@@ -119,7 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::with_startup_config(startup_config);
 
     // Initial render to show loading state
-    terminal.draw(|f| render_ui(f, &app))?;
+    terminal.draw(|f| render_ui(f, &mut app))?;
 
     // Trigger initial data load
     app.load_all_data().await;
@@ -131,12 +131,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app.refresh_requested = false;
             // Show a brief "Refreshing..." state
             app.state = AppState::Loading;
-            terminal.draw(|f| render_ui(f, &app))?;
+            terminal.draw(|f| render_ui(f, &mut app))?;
             app.load_all_data().await;
         }
 
         // Render UI
-        terminal.draw(|f| render_ui(f, &app))?;
+        terminal.draw(|f| render_ui(f, &mut app))?;
 
         // Poll for keyboard events with 100ms timeout
         if event::poll(Duration::from_millis(100))? {

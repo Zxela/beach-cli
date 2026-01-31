@@ -348,6 +348,20 @@ impl App {
                     self.reset_detail_view_state();
                     self.state = AppState::PlanTrip;
                 }
+                // Scroll navigation
+                KeyCode::Char('j') | KeyCode::Down => {
+                    self.scroll_down();
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.scroll_up();
+                }
+                KeyCode::Char('g') => {
+                    self.scroll_to_top();
+                }
+                KeyCode::Char('G') => {
+                    self.scroll_to_bottom();
+                }
+                // Activity selection
                 KeyCode::Char('1') => {
                     self.current_activity = Some(Activity::Swimming);
                 }
@@ -518,7 +532,23 @@ impl App {
         }
     }
 
+    /// Scrolls to the top of the detail view
+    ///
+    /// Resets scroll offset to 0.
+    pub fn scroll_to_top(&mut self) {
+        self.detail_scroll_offset = 0;
+    }
+
+    /// Scrolls to the bottom of the detail view
+    ///
+    /// Sets scroll offset to a large value that will be clamped by the renderer.
+    pub fn scroll_to_bottom(&mut self) {
+        // Set to a large value; the renderer will clamp to actual max
+        self.detail_scroll_offset = 100;
+    }
+
     /// Toggles the tide chart expansion state
+    #[allow(dead_code)]
     pub fn toggle_tide_chart(&mut self) {
         self.tide_chart_expanded = !self.tide_chart_expanded;
     }
@@ -1416,5 +1446,113 @@ mod tests {
 
         assert_eq!(app.detail_scroll_offset, 0);
         assert!(!app.tide_chart_expanded);
+    }
+
+    // ========================================================================
+    // Scroll Support Tests (Task 105)
+    // ========================================================================
+
+    #[test]
+    fn test_scroll_to_top() {
+        let mut app = App::new();
+        app.detail_scroll_offset = 50;
+
+        app.scroll_to_top();
+
+        assert_eq!(app.detail_scroll_offset, 0);
+    }
+
+    #[test]
+    fn test_scroll_to_bottom() {
+        let mut app = App::new();
+        app.detail_scroll_offset = 0;
+
+        app.scroll_to_bottom();
+
+        assert_eq!(app.detail_scroll_offset, 100);
+    }
+
+    #[test]
+    fn test_detail_view_j_scrolls_down() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+        app.detail_scroll_offset = 0;
+
+        app.handle_key(key_event(KeyCode::Char('j')));
+
+        assert_eq!(app.detail_scroll_offset, 1);
+    }
+
+    #[test]
+    fn test_detail_view_k_scrolls_up() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+        app.detail_scroll_offset = 5;
+
+        app.handle_key(key_event(KeyCode::Char('k')));
+
+        assert_eq!(app.detail_scroll_offset, 4);
+    }
+
+    #[test]
+    fn test_detail_view_down_arrow_scrolls_down() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+        app.detail_scroll_offset = 0;
+
+        app.handle_key(key_event(KeyCode::Down));
+
+        assert_eq!(app.detail_scroll_offset, 1);
+    }
+
+    #[test]
+    fn test_detail_view_up_arrow_scrolls_up() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+        app.detail_scroll_offset = 5;
+
+        app.handle_key(key_event(KeyCode::Up));
+
+        assert_eq!(app.detail_scroll_offset, 4);
+    }
+
+    #[test]
+    fn test_detail_view_g_scrolls_to_top() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+        app.detail_scroll_offset = 25;
+
+        app.handle_key(key_event(KeyCode::Char('g')));
+
+        assert_eq!(app.detail_scroll_offset, 0);
+    }
+
+    #[test]
+    fn test_detail_view_capital_g_scrolls_to_bottom() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+        app.detail_scroll_offset = 0;
+
+        app.handle_key(key_event(KeyCode::Char('G')));
+
+        assert_eq!(app.detail_scroll_offset, 100);
+    }
+
+    #[test]
+    fn test_scroll_keys_dont_change_state() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+
+        app.handle_key(key_event(KeyCode::Char('j')));
+        assert!(matches!(app.state, AppState::BeachDetail(_)));
+
+        app.handle_key(key_event(KeyCode::Char('k')));
+        assert!(matches!(app.state, AppState::BeachDetail(_)));
+
+        app.handle_key(key_event(KeyCode::Char('g')));
+        assert!(matches!(app.state, AppState::BeachDetail(_)));
+
+        app.handle_key(key_event(KeyCode::Char('G')));
+        assert!(matches!(app.state, AppState::BeachDetail(_)));
     }
 }
