@@ -562,10 +562,22 @@ fn compute_best_windows_from_hour(
         None => (2.4, 4.8), // Default mid-tide
     };
 
-    // Score each hour from current_hour to 9pm (filter past hours)
+    // Score each hour from current_hour to end hour (filter past hours)
+    // For Sunset activity, cap at sunset_hour since viewing sunset after sunset is nonsensical
+    let effective_end_hour = if activity == Activity::Sunset {
+        sunset_hour
+    } else {
+        21
+    };
+
+    // If we're already past the effective end hour, no windows are available
+    if current_hour > effective_end_hour {
+        return vec![];
+    }
+
     let start_hour = current_hour.max(6); // Don't go before 6am
     let mut hourly_scores: Vec<(u8, u8)> = Vec::new();
-    for hour in start_hour..=21 {
+    for hour in start_hour..=effective_end_hour {
         // Estimate crowd level based on time of day (simple heuristic)
         let crowd_level = estimate_crowd_level(hour);
 
@@ -1302,5 +1314,28 @@ mod tests {
                 || peace_best.end_hour != sunset_best.end_hour,
             "Peace and Sunset should have different best windows"
         );
+    }
+
+    #[test]
+    fn test_sunset_activity_excludes_hours_after_sunset() {
+        // Create conditions with sunset at 17:00
+        let conditions = create_test_conditions_with_sunset(17, 0);
+        // Start from hour 6 to see all hours
+        let windows = compute_best_windows_from_hour(Activity::Sunset, &conditions, 6);
+        // No window should include hours after sunset (17)
+        for window in &windows {
+            assert!(
+                window.end_hour <= 18,
+                "Sunset window should not extend past sunset hour. Got end_hour={}",
+                window.end_hour
+            );
+        }
+    }
+
+    #[test]
+    fn test_sunset_activity_returns_empty_when_past_sunset() {
+        let conditions = create_test_conditions_with_sunset(17, 0);
+        let windows = compute_best_windows_from_hour(Activity::Sunset, &conditions, 18);
+        assert!(windows.is_empty(), "Should have no windows when starting after sunset");
     }
 }
