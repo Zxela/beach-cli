@@ -116,25 +116,28 @@ release-draft: ## Create draft release on GitHub
 ## Tagging & Versioning
 
 release-patch: ## Bump patch version, commit, push, and create release tag
-	@make bump-patch
-	@git add Cargo.toml
-	@git commit -m "chore: bump version to $$(make version)"
-	@git push
-	@make tag
+	@make --no-print-directory bump-patch
+	@NEW_VER=$$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'); \
+	git add Cargo.toml && \
+	git commit -m "chore: bump version to $$NEW_VER" && \
+	git push && \
+	make --no-print-directory tag
 
 release-minor: ## Bump minor version, commit, push, and create release tag
-	@make bump-minor
-	@git add Cargo.toml
-	@git commit -m "chore: bump version to $$(make version)"
-	@git push
-	@make tag
+	@make --no-print-directory bump-minor
+	@NEW_VER=$$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'); \
+	git add Cargo.toml && \
+	git commit -m "chore: bump version to $$NEW_VER" && \
+	git push && \
+	make --no-print-directory tag
 
 release-major: ## Bump major version, commit, push, and create release tag
-	@make bump-major
-	@git add Cargo.toml
-	@git commit -m "chore: bump version to $$(make version)"
-	@git push
-	@make tag
+	@make --no-print-directory bump-major
+	@NEW_VER=$$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'); \
+	git add Cargo.toml && \
+	git commit -m "chore: bump version to $$NEW_VER" && \
+	git push && \
+	make --no-print-directory tag
 
 tag: ## Create and push a git tag for current version (triggers GitHub release)
 	@if git rev-parse "v$(VERSION)" >/dev/null 2>&1; then \
