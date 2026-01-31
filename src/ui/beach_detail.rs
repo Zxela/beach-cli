@@ -217,7 +217,17 @@ fn render_weather_section(frame: &mut Frame, area: Rect, weather: Option<&crate:
     frame.render_widget(paragraph, area);
 }
 
-/// Renders the tides section
+/// Block characters for tide chart (8 levels)
+const TIDE_BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+/// Converts a tide height to a block character
+fn height_to_block(height: f64, max_height: f64) -> char {
+    let normalized = (height / max_height).clamp(0.0, 1.0);
+    let index = ((normalized * 7.0).round() as usize).min(7);
+    TIDE_BLOCKS[index]
+}
+
+/// Renders the tides section with tide chart
 fn render_tides_section(frame: &mut Frame, area: Rect, tides: Option<&crate::data::TideInfo>) {
     let mut lines = vec![Line::from(Span::styled(
         "TIDES",
@@ -230,59 +240,71 @@ fn render_tides_section(frame: &mut Frame, area: Rect, tides: Option<&crate::dat
         Some(t) => {
             // Current tide state with arrow
             let (state_icon, state_text, state_color) = match t.tide_state {
-                TideState::Rising => ("^", "Rising", colors::RISING),
-                TideState::Falling => ("v", "Falling", colors::FALLING),
-                TideState::High => ("=", "High", colors::HEADER),
-                TideState::Low => ("=", "Low", colors::SECONDARY),
+                TideState::Rising => ("↑", "Rising", colors::RISING),
+                TideState::Falling => ("↓", "Falling", colors::FALLING),
+                TideState::High => ("─", "High", colors::HEADER),
+                TideState::Low => ("─", "Low", colors::SECONDARY),
             };
 
             let state_line = Line::from(vec![
                 Span::styled(state_icon, Style::default().fg(state_color)),
                 Span::raw(" "),
                 Span::styled(state_text, Style::default().fg(state_color)),
-            ]);
-            lines.push(state_line);
-
-            // Current height
-            let height_line = Line::from(vec![
-                Span::raw("Height: "),
+                Span::raw(" "),
                 Span::styled(
                     format!("{:.1}m", t.current_height),
                     Style::default().fg(colors::PRIMARY),
                 ),
             ]);
-            lines.push(height_line);
+            lines.push(state_line);
 
-            // Next high tide
-            if let Some(ref high) = t.next_high {
-                let high_line = Line::from(vec![
-                    Span::styled("High: ", Style::default().fg(colors::SECONDARY)),
-                    Span::styled(
-                        high.time.format("%l:%M %p").to_string().trim().to_string(),
-                        Style::default().fg(colors::PRIMARY),
-                    ),
-                    Span::styled(
-                        format!(" ({:.1}m)", high.height),
-                        Style::default().fg(colors::SECONDARY),
-                    ),
-                ]);
-                lines.push(high_line);
+            // Generate tide chart
+            let heights = t.hourly_heights(4.8);
+            let current_hour = Local::now().hour() as usize;
+            let current_index = if (6..=21).contains(&current_hour) {
+                Some(current_hour - 6)
+            } else {
+                None
+            };
+
+            // Build sparkline with current hour highlighted
+            let mut chart_spans: Vec<Span> = Vec::new();
+            for (i, height) in heights.iter().enumerate() {
+                let block = height_to_block(*height, 4.8);
+                let style = if current_index == Some(i) {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(colors::RISING)
+                };
+                chart_spans.push(Span::styled(block.to_string(), style));
             }
+            lines.push(Line::from(chart_spans));
 
-            // Next low tide
+            // Hour labels under chart
+            lines.push(Line::from(Span::styled(
+                "6    9   12   15   18  21",
+                Style::default().fg(colors::SECONDARY),
+            )));
+
+            // Next high/low on same line
+            let mut next_events: Vec<Span> = Vec::new();
+            if let Some(ref high) = t.next_high {
+                next_events.push(Span::styled("H:", Style::default().fg(colors::SECONDARY)));
+                next_events.push(Span::styled(
+                    high.time.format("%H:%M").to_string(),
+                    Style::default().fg(colors::PRIMARY),
+                ));
+                next_events.push(Span::raw(" "));
+            }
             if let Some(ref low) = t.next_low {
-                let low_line = Line::from(vec![
-                    Span::styled("Low:  ", Style::default().fg(colors::SECONDARY)),
-                    Span::styled(
-                        low.time.format("%l:%M %p").to_string().trim().to_string(),
-                        Style::default().fg(colors::PRIMARY),
-                    ),
-                    Span::styled(
-                        format!(" ({:.1}m)", low.height),
-                        Style::default().fg(colors::SECONDARY),
-                    ),
-                ]);
-                lines.push(low_line);
+                next_events.push(Span::styled("L:", Style::default().fg(colors::SECONDARY)));
+                next_events.push(Span::styled(
+                    low.time.format("%H:%M").to_string(),
+                    Style::default().fg(colors::PRIMARY),
+                ));
+            }
+            if !next_events.is_empty() {
+                lines.push(Line::from(next_events));
             }
         }
         None => {
