@@ -52,6 +52,10 @@ pub struct App {
     pub refresh_requested: bool,
     /// Flag to show help overlay
     pub show_help: bool,
+    /// Scroll offset for beach detail view
+    pub detail_scroll_offset: u16,
+    /// Whether tide chart is expanded in detail view
+    pub tide_chart_expanded: bool,
     /// Weather API client
     weather_client: WeatherClient,
     /// Tides API client
@@ -76,6 +80,8 @@ impl App {
             last_refresh: None,
             refresh_requested: false,
             show_help: false,
+            detail_scroll_offset: 0,
+            tide_chart_expanded: false,
             weather_client: WeatherClient::new(),
             tides_client: TidesClient::new(cache.clone()),
             water_quality_client: cache
@@ -124,6 +130,8 @@ impl App {
             last_refresh: None,
             refresh_requested: false,
             show_help: false,
+            detail_scroll_offset: 0,
+            tide_chart_expanded: false,
             weather_client,
             tides_client,
             water_quality_client,
@@ -333,9 +341,11 @@ impl App {
                     self.should_quit = true;
                 }
                 KeyCode::Esc => {
+                    self.reset_detail_view_state();
                     self.state = AppState::BeachList;
                 }
                 KeyCode::Char('p') => {
+                    self.reset_detail_view_state();
                     self.state = AppState::PlanTrip;
                 }
                 KeyCode::Char('1') => {
@@ -487,6 +497,39 @@ impl App {
     pub fn get_selected_conditions(&self) -> Option<&BeachConditions> {
         self.selected_beach()
             .and_then(|beach| self.beach_conditions.get(beach.id))
+    }
+
+    /// Scrolls up in the detail view with bounds checking
+    ///
+    /// Decreases scroll offset by 1, stopping at 0.
+    pub fn scroll_up(&mut self) {
+        self.detail_scroll_offset = self.detail_scroll_offset.saturating_sub(1);
+    }
+
+    /// Scrolls down in the detail view with bounds checking
+    ///
+    /// Increases scroll offset by 1, with a maximum limit.
+    /// The actual maximum depends on content height, but we use a reasonable upper bound.
+    pub fn scroll_down(&mut self) {
+        // Use a reasonable maximum scroll offset (can be adjusted based on content)
+        const MAX_SCROLL: u16 = 100;
+        if self.detail_scroll_offset < MAX_SCROLL {
+            self.detail_scroll_offset += 1;
+        }
+    }
+
+    /// Toggles the tide chart expansion state
+    pub fn toggle_tide_chart(&mut self) {
+        self.tide_chart_expanded = !self.tide_chart_expanded;
+    }
+
+    /// Resets detail view state when navigating away
+    ///
+    /// Called when leaving the detail view to reset scroll position
+    /// and tide chart expansion state for the next detail view visit.
+    pub fn reset_detail_view_state(&mut self) {
+        self.detail_scroll_offset = 0;
+        self.tide_chart_expanded = false;
     }
 
     /// Finds the best beach for the current activity right now
@@ -1247,5 +1290,131 @@ mod tests {
         app.current_activity = Some(Activity::Swimming);
         // No beach conditions loaded, should return None
         assert!(app.find_best_beach_now().is_none());
+    }
+
+    // ========================================================================
+    // Detail View State Tests (Task 103)
+    // ========================================================================
+
+    #[test]
+    fn test_detail_scroll_offset_initial_value() {
+        let app = App::new();
+        assert_eq!(app.detail_scroll_offset, 0);
+    }
+
+    #[test]
+    fn test_tide_chart_expanded_initial_value() {
+        let app = App::new();
+        assert!(!app.tide_chart_expanded);
+    }
+
+    #[test]
+    fn test_scroll_up_decreases_offset() {
+        let mut app = App::new();
+        app.detail_scroll_offset = 5;
+
+        app.scroll_up();
+        assert_eq!(app.detail_scroll_offset, 4);
+
+        app.scroll_up();
+        assert_eq!(app.detail_scroll_offset, 3);
+    }
+
+    #[test]
+    fn test_scroll_up_stops_at_zero() {
+        let mut app = App::new();
+        app.detail_scroll_offset = 1;
+
+        app.scroll_up();
+        assert_eq!(app.detail_scroll_offset, 0);
+
+        // Should stay at 0, not underflow
+        app.scroll_up();
+        assert_eq!(app.detail_scroll_offset, 0);
+    }
+
+    #[test]
+    fn test_scroll_down_increases_offset() {
+        let mut app = App::new();
+        assert_eq!(app.detail_scroll_offset, 0);
+
+        app.scroll_down();
+        assert_eq!(app.detail_scroll_offset, 1);
+
+        app.scroll_down();
+        assert_eq!(app.detail_scroll_offset, 2);
+    }
+
+    #[test]
+    fn test_scroll_down_respects_maximum() {
+        let mut app = App::new();
+        app.detail_scroll_offset = 100; // MAX_SCROLL
+
+        app.scroll_down();
+        assert_eq!(app.detail_scroll_offset, 100); // Should not exceed max
+    }
+
+    #[test]
+    fn test_toggle_tide_chart() {
+        let mut app = App::new();
+        assert!(!app.tide_chart_expanded);
+
+        app.toggle_tide_chart();
+        assert!(app.tide_chart_expanded);
+
+        app.toggle_tide_chart();
+        assert!(!app.tide_chart_expanded);
+    }
+
+    #[test]
+    fn test_reset_detail_view_state() {
+        let mut app = App::new();
+        app.detail_scroll_offset = 10;
+        app.tide_chart_expanded = true;
+
+        app.reset_detail_view_state();
+
+        assert_eq!(app.detail_scroll_offset, 0);
+        assert!(!app.tide_chart_expanded);
+    }
+
+    #[test]
+    fn test_detail_view_state_resets_on_esc() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+        app.detail_scroll_offset = 5;
+        app.tide_chart_expanded = true;
+
+        app.handle_key(key_event(KeyCode::Esc));
+
+        assert_eq!(app.state, AppState::BeachList);
+        assert_eq!(app.detail_scroll_offset, 0);
+        assert!(!app.tide_chart_expanded);
+    }
+
+    #[test]
+    fn test_detail_view_state_resets_on_plan_trip_navigation() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+        app.detail_scroll_offset = 7;
+        app.tide_chart_expanded = true;
+
+        app.handle_key(key_event(KeyCode::Char('p')));
+
+        assert_eq!(app.state, AppState::PlanTrip);
+        assert_eq!(app.detail_scroll_offset, 0);
+        assert!(!app.tide_chart_expanded);
+    }
+
+    #[test]
+    fn test_with_clients_initializes_detail_view_state() {
+        let weather_client = WeatherClient::new();
+        let tides_client = TidesClient::new(None);
+        let water_quality_client = WaterQualityClient::default();
+
+        let app = App::with_clients(weather_client, tides_client, water_quality_client);
+
+        assert_eq!(app.detail_scroll_offset, 0);
+        assert!(!app.tide_chart_expanded);
     }
 }
