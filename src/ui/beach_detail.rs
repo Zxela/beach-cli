@@ -87,12 +87,16 @@ pub fn render(frame: &mut Frame, app: &mut App, beach_id: &str) {
     // Determine if we need to show the Best Window section
     let show_best_window = app.current_activity.is_some();
 
+    // Determine tide section height based on expanded state
+    let tide_chart_expanded = app.tide_chart_expanded;
+    let tides_height: u16 = if tide_chart_expanded { 15 } else { 5 };
+
     // Calculate content heights
-    // Section heights: weather(7), tides(5), water_quality(4), best_window(6 if shown)
+    // Section heights: weather(7), tides(5 or 15), water_quality(4), best_window(6 if shown)
     let content_height: u16 = if show_best_window {
-        7 + 5 + 4 + 6 // weather + tides + water_quality + best_window
+        7 + tides_height + 4 + 6 // weather + tides + water_quality + best_window
     } else {
-        7 + 5 + 4 // weather + tides + water_quality
+        7 + tides_height + 4 // weather + tides + water_quality
     };
 
     // Fixed elements: activity selector (1), help text (2)
@@ -153,6 +157,7 @@ pub fn render(frame: &mut Frame, app: &mut App, beach_id: &str) {
         beach_id,
         scroll_offset,
         show_best_window,
+        tide_chart_expanded,
         conditions,
     );
 
@@ -168,18 +173,19 @@ fn render_scrollable_content(
     beach_id: &str,
     scroll_offset: u16,
     show_best_window: bool,
+    tide_chart_expanded: bool,
     conditions: &crate::data::BeachConditions,
 ) {
     // Section heights
     const WEATHER_HEIGHT: u16 = 7;
-    const TIDES_HEIGHT: u16 = 5;
+    let tides_height: u16 = if tide_chart_expanded { 15 } else { 5 };
     const WATER_QUALITY_HEIGHT: u16 = 4;
     const BEST_WINDOW_HEIGHT: u16 = 6;
 
     // Calculate section positions (cumulative Y offsets)
     let weather_start: u16 = 0;
     let tides_start = weather_start + WEATHER_HEIGHT;
-    let water_quality_start = tides_start + TIDES_HEIGHT;
+    let water_quality_start = tides_start + tides_height;
     let best_window_start = water_quality_start + WATER_QUALITY_HEIGHT;
 
     // Render each section only if it's visible after scroll offset
@@ -206,7 +212,7 @@ fn render_scrollable_content(
     // Tides section
     if let Some(visible_rect) = calculate_visible_rect(
         tides_start,
-        TIDES_HEIGHT,
+        tides_height,
         visible_start,
         visible_end,
         area,
@@ -217,6 +223,7 @@ fn render_scrollable_content(
             visible_rect,
             conditions.tides.as_ref(),
             section_offset,
+            tide_chart_expanded,
         );
     }
 
@@ -345,8 +352,13 @@ fn render_tides_section_with_offset(
     area: Rect,
     tides: Option<&crate::data::TideInfo>,
     offset: u16,
+    expanded: bool,
 ) {
-    let lines = build_tides_lines_with_width(tides, area.width as usize);
+    let lines = if expanded {
+        build_expanded_tide_chart(tides, area.width as usize)
+    } else {
+        build_tides_lines_with_width(tides, area.width as usize)
+    };
     let paragraph = Paragraph::new(lines).scroll((offset, 0));
     frame.render_widget(paragraph, area);
 }
@@ -573,6 +585,317 @@ fn build_tides_lines_with_width(tides: Option<&crate::data::TideInfo>, width: us
     }
 
     lines
+}
+
+/// Builds the expanded ASCII tide chart with Y-axis labels, tide curve, and X-axis time markers.
+/// The chart is approximately 12 lines tall and uses box-drawing characters for the curve.
+fn build_expanded_tide_chart(tides: Option<&crate::data::TideInfo>, width: usize) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from(Span::styled(
+        "TIDES",
+        Style::default()
+            .fg(colors::HEADER)
+            .add_modifier(Modifier::BOLD),
+    ))];
+
+    match tides {
+        Some(t) => {
+            // Current tide state with arrow (same as collapsed view)
+            let (state_icon, state_text, state_color) = match t.tide_state {
+                TideState::Rising => ("\u{2191}", "Rising", colors::RISING),
+                TideState::Falling => ("\u{2193}", "Falling", colors::FALLING),
+                TideState::High => ("\u{2500}", "High", colors::HEADER),
+                TideState::Low => ("\u{2500}", "Low", colors::SECONDARY),
+            };
+
+            let state_line = Line::from(vec![
+                Span::styled(state_icon, Style::default().fg(state_color)),
+                Span::raw(" "),
+                Span::styled(state_text.to_string(), Style::default().fg(state_color)),
+                Span::raw(" "),
+                Span::styled(
+                    format!("{:.1}m", t.current_height),
+                    Style::default().fg(colors::PRIMARY),
+                ),
+            ]);
+            lines.push(state_line);
+
+            // Calculate chart dimensions
+            // Reserve 4 chars for Y-axis labels (e.g., "4m ┤")
+            let y_axis_width: usize = 4;
+            let chart_width = width.saturating_sub(y_axis_width).max(20);
+
+            // Heights for the chart: 9 rows (0m to 4m with intermediate rows)
+            // Row 0 = 4m, Row 8 = 0m
+            const CHART_ROWS: usize = 9;
+            const MAX_HEIGHT: f64 = 4.0;
+
+            // Get tide heights and interpolate to fill chart width
+            let base_heights = t.hourly_heights(MAX_HEIGHT);
+            let interpolated_heights = interpolate_heights(&base_heights, chart_width);
+
+            // Determine current hour position
+            let current_hour = Local::now().hour() as usize;
+            let current_col_index = if (6..=21).contains(&current_hour) {
+                let hour_offset = current_hour - 6;
+                Some((hour_offset * chart_width) / 16)
+            } else {
+                None
+            };
+
+            // Current height in row coordinates (0 = 4m, 8 = 0m)
+            let current_height_row = if current_col_index.is_some() {
+                let h = t.current_height.clamp(0.0, MAX_HEIGHT);
+                let normalized = h / MAX_HEIGHT;
+                let row = ((1.0 - normalized) * (CHART_ROWS - 1) as f64).round() as usize;
+                Some(row.min(CHART_ROWS - 1))
+            } else {
+                None
+            };
+
+            // Build the chart row by row
+            // Y-axis labels: 4m, 3m, 2m, 1m, 0m (with intermediate rows unlabeled)
+            let y_labels = ["4m", "  ", "3m", "  ", "2m", "  ", "1m", "  ", "0m"];
+
+            for row in 0..CHART_ROWS {
+                let height_threshold_high = MAX_HEIGHT - (row as f64 * MAX_HEIGHT / (CHART_ROWS - 1) as f64);
+                let height_threshold_low = MAX_HEIGHT - ((row + 1) as f64 * MAX_HEIGHT / (CHART_ROWS - 1) as f64);
+
+                // Build the row
+                let y_label = y_labels.get(row).unwrap_or(&"  ");
+                let y_axis_char = if row == CHART_ROWS - 1 { "\u{253C}" } else { "\u{2524}" }; // ┼ for bottom, ┤ for others
+
+                let mut row_spans: Vec<Span> = vec![
+                    Span::styled(
+                        format!("{} {}", y_label, y_axis_char),
+                        Style::default().fg(colors::SECONDARY),
+                    ),
+                ];
+
+                // Draw the chart content for this row
+                let mut chart_chars: Vec<char> = Vec::with_capacity(chart_width);
+                for col in 0..chart_width {
+                    let height = interpolated_heights.get(col).copied().unwrap_or(0.0);
+                    let prev_height = if col > 0 { interpolated_heights.get(col - 1).copied().unwrap_or(0.0) } else { height };
+                    let next_height = interpolated_heights.get(col + 1).copied().unwrap_or(height);
+
+                    // Determine what character to draw based on the tide curve
+                    let char_to_draw = get_chart_character(
+                        row, col, height, prev_height, next_height,
+                        height_threshold_high, height_threshold_low,
+                        CHART_ROWS, MAX_HEIGHT
+                    );
+                    chart_chars.push(char_to_draw);
+                }
+
+                // Convert to string and highlight current position
+                let chart_str: String = chart_chars.iter().collect();
+
+                // Check if current position marker should be on this row
+                if let (Some(col_idx), Some(height_row)) = (current_col_index, current_height_row) {
+                    if row == height_row && col_idx < chart_width {
+                        // Split string and insert marker
+                        let before: String = chart_chars.iter().take(col_idx).collect();
+                        let after: String = chart_chars.iter().skip(col_idx + 1).collect();
+
+                        row_spans.push(Span::styled(before, Style::default().fg(colors::RISING)));
+                        row_spans.push(Span::styled("\u{25CF}".to_string(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))); // ●
+                        row_spans.push(Span::styled(after, Style::default().fg(colors::RISING)));
+                    } else {
+                        row_spans.push(Span::styled(chart_str, Style::default().fg(colors::RISING)));
+                    }
+                } else {
+                    row_spans.push(Span::styled(chart_str, Style::default().fg(colors::RISING)));
+                }
+
+                lines.push(Line::from(row_spans));
+            }
+
+            // X-axis bottom border
+            let x_axis_line = format!(
+                "   \u{2514}{}",
+                "\u{2500}".repeat(chart_width.min(width.saturating_sub(4)))
+            );
+            lines.push(Line::from(Span::styled(
+                x_axis_line,
+                Style::default().fg(colors::SECONDARY),
+            )));
+
+            // X-axis time markers
+            let time_markers = build_expanded_time_labels(chart_width);
+            lines.push(Line::from(Span::styled(
+                format!("    {}", time_markers),
+                Style::default().fg(colors::SECONDARY),
+            )));
+
+            // Next high/low times and collapse hint
+            let mut next_events: Vec<Span> = Vec::new();
+            if let Some(ref high) = t.next_high {
+                next_events.push(Span::styled("H:".to_string(), Style::default().fg(colors::SECONDARY)));
+                next_events.push(Span::styled(
+                    high.time.format("%H:%M").to_string(),
+                    Style::default().fg(colors::PRIMARY),
+                ));
+                next_events.push(Span::raw(" "));
+            }
+            if let Some(ref low) = t.next_low {
+                next_events.push(Span::styled("L:".to_string(), Style::default().fg(colors::SECONDARY)));
+                next_events.push(Span::styled(
+                    low.time.format("%H:%M").to_string(),
+                    Style::default().fg(colors::PRIMARY),
+                ));
+            }
+            // Add collapse hint
+            if !next_events.is_empty() {
+                next_events.push(Span::raw("  "));
+            }
+            next_events.push(Span::styled(
+                "[t] collapse".to_string(),
+                Style::default().fg(colors::SECONDARY),
+            ));
+            lines.push(Line::from(next_events));
+        }
+        None => {
+            lines.push(Line::from(Span::styled(
+                "Tide data unavailable",
+                Style::default().fg(colors::UNKNOWN),
+            )));
+        }
+    }
+
+    lines
+}
+
+/// Determines the character to draw at a given position in the expanded tide chart.
+fn get_chart_character(
+    row: usize,
+    col: usize,
+    height: f64,
+    prev_height: f64,
+    next_height: f64,
+    _height_threshold_high: f64,
+    _height_threshold_low: f64,
+    chart_rows: usize,
+    max_height: f64,
+) -> char {
+    // Convert heights to row coordinates
+    let height_to_row = |h: f64| -> usize {
+        let normalized = h.clamp(0.0, max_height) / max_height;
+        let r = ((1.0 - normalized) * (chart_rows - 1) as f64).round() as usize;
+        r.min(chart_rows - 1)
+    };
+
+    let current_row = height_to_row(height);
+    let prev_row = height_to_row(prev_height);
+    let next_row = height_to_row(next_height);
+
+    // Check if the curve passes through this cell
+    if current_row == row {
+        // The curve is at this height
+        if col == 0 {
+            // First column
+            if next_row < row {
+                '\u{256D}' // ╭ - going up
+            } else if next_row > row {
+                '\u{2570}' // ╰ - going down
+            } else {
+                '\u{2500}' // ─ - horizontal
+            }
+        } else if prev_row < row && next_row < row {
+            // Coming from above and going up - this is a valley
+            '\u{2570}' // ╰
+        } else if prev_row > row && next_row > row {
+            // Coming from below and going down - this is a peak
+            '\u{256D}' // ╭
+        } else if prev_row > row {
+            // Coming from below
+            if next_row < row {
+                '\u{256D}' // ╭ - peak
+            } else if next_row > row {
+                '\u{256E}' // ╮ - going down
+            } else {
+                '\u{256F}' // ╯ - ending climb
+            }
+        } else if prev_row < row {
+            // Coming from above
+            if next_row > row {
+                '\u{2570}' // ╰ - valley
+            } else if next_row < row {
+                '\u{256D}' // ╭ - going up
+            } else {
+                '\u{256D}' // ╭ - starting descent
+            }
+        } else {
+            // prev_row == row
+            if next_row < row {
+                '\u{256D}' // ╭ - starting to go up
+            } else if next_row > row {
+                '\u{256E}' // ╮ - starting to go down
+            } else {
+                '\u{2500}' // ─ - horizontal
+            }
+        }
+    } else if (current_row < row && prev_row >= row) || (prev_row < row && current_row >= row) {
+        // Vertical segment passes through this row (transition between prev and current)
+        if prev_row < current_row {
+            // Going down
+            if row == prev_row + 1 {
+                '\u{256E}' // ╮
+            } else if row == current_row {
+                '\u{2570}' // ╰
+            } else {
+                '\u{2502}' // │
+            }
+        } else {
+            // Going up
+            if row == current_row + 1 {
+                '\u{256F}' // ╯
+            } else if row == prev_row {
+                '\u{256D}' // ╭
+            } else {
+                '\u{2502}' // │
+            }
+        }
+    } else {
+        // No curve at this position
+        ' '
+    }
+}
+
+/// Builds time labels for the expanded chart X-axis
+fn build_expanded_time_labels(width: usize) -> String {
+    if width < 30 {
+        return "6AM     12PM      6PM".to_string();
+    }
+
+    // Time markers: 6AM, 8AM, 10AM, 12PM, 2PM, 4PM, 6PM, 8PM, 10PM
+    let labels = ["6AM", "8AM", "10AM", "12PM", "2PM", "4PM", "6PM", "8PM", "10PM"];
+    // Positions: 0, 2, 4, 6, 8, 10, 12, 14, 16 hours from 6AM (out of 16 hours total)
+    let positions: [f64; 9] = [0.0, 2.0/16.0, 4.0/16.0, 6.0/16.0, 8.0/16.0, 10.0/16.0, 12.0/16.0, 14.0/16.0, 16.0/16.0];
+
+    let mut result = vec![' '; width];
+
+    for (label, &pos) in labels.iter().zip(positions.iter()) {
+        let char_pos = ((pos * (width - 1) as f64).round() as usize).min(width - 1);
+        let label_chars: Vec<char> = label.chars().collect();
+        let label_len = label_chars.len();
+
+        // For last label, right-align
+        let start = if pos >= 0.99 {
+            width.saturating_sub(label_len)
+        } else {
+            char_pos.saturating_sub(label_len / 2)
+        };
+
+        let end = (start + label_len).min(width);
+
+        for (i, ch) in label_chars.iter().enumerate() {
+            if start + i < end {
+                result[start + i] = *ch;
+            }
+        }
+    }
+
+    result.iter().collect()
 }
 
 /// Interpolates tide heights to fill the target width
@@ -2673,5 +2996,199 @@ mod tests {
             line.spans.iter().any(|span| span.content.contains("unavailable"))
         });
         assert!(has_unavailable, "Should show unavailable message when no tides data");
+    }
+
+    // ========================================================================
+    // Expanded Tide Chart Tests (Task 107)
+    // ========================================================================
+
+    #[test]
+    fn test_expanded_tide_chart_has_more_lines_than_collapsed() {
+        let tides = create_test_tides();
+        let collapsed_lines = build_tides_lines_with_width(Some(&tides), 60);
+        let expanded_lines = build_expanded_tide_chart(Some(&tides), 60);
+
+        assert!(
+            expanded_lines.len() > collapsed_lines.len(),
+            "Expanded chart ({}) should have more lines than collapsed ({})",
+            expanded_lines.len(),
+            collapsed_lines.len()
+        );
+    }
+
+    #[test]
+    fn test_expanded_tide_chart_height_approximately_15_lines() {
+        let tides = create_test_tides();
+        let lines = build_expanded_tide_chart(Some(&tides), 60);
+
+        // Expected: header(1) + state(1) + chart_rows(9) + x_axis_border(1) + time_markers(1) + next_events(1) = 14-15 lines
+        assert!(
+            lines.len() >= 13 && lines.len() <= 16,
+            "Expanded chart should have ~14-15 lines, got {}",
+            lines.len()
+        );
+    }
+
+    #[test]
+    fn test_expanded_tide_chart_contains_y_axis_labels() {
+        let tides = create_test_tides();
+        let lines = build_expanded_tide_chart(Some(&tides), 60);
+
+        // Convert all lines to string for checking
+        let all_content: String = lines.iter()
+            .flat_map(|line| line.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+
+        assert!(all_content.contains("0m"), "Should contain 0m Y-axis label");
+        assert!(all_content.contains("1m"), "Should contain 1m Y-axis label");
+        assert!(all_content.contains("2m"), "Should contain 2m Y-axis label");
+        assert!(all_content.contains("3m"), "Should contain 3m Y-axis label");
+        assert!(all_content.contains("4m"), "Should contain 4m Y-axis label");
+    }
+
+    #[test]
+    fn test_expanded_tide_chart_contains_x_axis_time_markers() {
+        let tides = create_test_tides();
+        let lines = build_expanded_tide_chart(Some(&tides), 80);
+
+        // Convert all lines to string for checking
+        let all_content: String = lines.iter()
+            .flat_map(|line| line.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+
+        assert!(all_content.contains("6AM"), "Should contain 6AM time marker");
+        assert!(all_content.contains("12PM"), "Should contain 12PM time marker");
+        assert!(all_content.contains("6PM"), "Should contain 6PM time marker");
+    }
+
+    #[test]
+    fn test_expanded_tide_chart_contains_collapse_hint() {
+        let tides = create_test_tides();
+        let lines = build_expanded_tide_chart(Some(&tides), 60);
+
+        // Check for collapse hint
+        let has_collapse_hint = lines.iter().any(|line| {
+            line.spans.iter().any(|span| span.content.contains("[t] collapse"))
+        });
+        assert!(has_collapse_hint, "Expanded chart should contain [t] collapse hint");
+    }
+
+    #[test]
+    fn test_collapsed_tide_chart_contains_expand_hint() {
+        let tides = create_test_tides();
+        let lines = build_tides_lines_with_width(Some(&tides), 60);
+
+        // Check for expand hint
+        let has_expand_hint = lines.iter().any(|line| {
+            line.spans.iter().any(|span| span.content.contains("[t] expand"))
+        });
+        assert!(has_expand_hint, "Collapsed chart should contain [t] expand hint");
+    }
+
+    #[test]
+    fn test_expanded_tide_chart_uses_box_drawing_characters() {
+        let tides = create_test_tides();
+        let lines = build_expanded_tide_chart(Some(&tides), 60);
+
+        // Convert all lines to string
+        let all_content: String = lines.iter()
+            .flat_map(|line| line.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+
+        // Should contain box-drawing characters (Y-axis uses ┤ and ┼)
+        assert!(
+            all_content.contains('\u{2524}') || all_content.contains('\u{253C}'),
+            "Should contain Y-axis box-drawing characters (┤ or ┼)"
+        );
+    }
+
+    #[test]
+    fn test_expanded_tide_chart_without_data() {
+        let lines = build_expanded_tide_chart(None, 60);
+
+        // Should show header and unavailable message
+        assert!(lines.len() >= 2, "Should have at least header and message");
+
+        let has_unavailable = lines.iter().any(|line| {
+            line.spans.iter().any(|span| span.content.contains("unavailable"))
+        });
+        assert!(has_unavailable, "Should show unavailable message when no tides data");
+    }
+
+    #[test]
+    fn test_build_expanded_time_labels_wide_width() {
+        let labels = build_expanded_time_labels(80);
+        assert!(labels.contains("6AM"), "Should contain 6AM");
+        assert!(labels.contains("12PM"), "Should contain 12PM");
+        assert!(labels.contains("10PM"), "Should contain 10PM");
+    }
+
+    #[test]
+    fn test_build_expanded_time_labels_narrow_width() {
+        let labels = build_expanded_time_labels(25);
+        // For narrow widths, should still have some time markers
+        assert!(labels.contains("6AM"), "Should contain 6AM even in narrow width");
+    }
+
+    #[test]
+    fn test_t_key_toggles_tide_chart_expansion() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut app = App::new();
+        app.state = crate::app::AppState::BeachDetail("kitsilano".to_string());
+        assert!(!app.tide_chart_expanded, "Should start collapsed");
+
+        // Press 't' to expand
+        app.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE));
+        assert!(app.tide_chart_expanded, "Should be expanded after 't' press");
+
+        // Press 't' again to collapse
+        app.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE));
+        assert!(!app.tide_chart_expanded, "Should be collapsed after second 't' press");
+    }
+
+    #[test]
+    fn test_tide_chart_expanded_state_in_rendered_output() {
+        let backend = TestBackend::new(80, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_test_app_with_conditions(
+            "kitsilano",
+            Some(create_test_weather()),
+            Some(create_test_tides()),
+            Some(create_test_water_quality()),
+        );
+
+        // Render with collapsed chart
+        app.tide_chart_expanded = false;
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let collapsed_content: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+
+        // Render with expanded chart
+        app.tide_chart_expanded = true;
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let expanded_content: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+
+        // Expanded should have "collapse" hint, collapsed should have "expand" hint
+        assert!(
+            collapsed_content.contains("expand"),
+            "Collapsed view should show 'expand' hint"
+        );
+        assert!(
+            expanded_content.contains("collapse"),
+            "Expanded view should show 'collapse' hint"
+        );
     }
 }

@@ -383,6 +383,9 @@ impl App {
                 KeyCode::Char('?') => {
                     self.show_help = true;
                 }
+                KeyCode::Char('t') => {
+                    self.toggle_tide_chart();
+                }
                 _ => {}
             },
             AppState::PlanTrip => {
@@ -548,7 +551,6 @@ impl App {
     }
 
     /// Toggles the tide chart expansion state
-    #[allow(dead_code)]
     pub fn toggle_tide_chart(&mut self) {
         self.tide_chart_expanded = !self.tide_chart_expanded;
     }
@@ -1554,5 +1556,44 @@ mod tests {
 
         app.handle_key(key_event(KeyCode::Char('G')));
         assert!(matches!(app.state, AppState::BeachDetail(_)));
+    }
+
+    // ========================================================================
+    // Tide Chart Toggle Tests (Task 107)
+    // ========================================================================
+
+    #[test]
+    fn test_t_key_toggles_tide_chart_in_beach_detail() {
+        let mut app = App::new();
+        app.state = AppState::BeachDetail("kitsilano".to_string());
+        assert!(!app.tide_chart_expanded, "Should start collapsed");
+
+        app.handle_key(key_event(KeyCode::Char('t')));
+        assert!(app.tide_chart_expanded, "Should be expanded after 't'");
+
+        app.handle_key(key_event(KeyCode::Char('t')));
+        assert!(!app.tide_chart_expanded, "Should be collapsed after second 't'");
+    }
+
+    #[test]
+    fn test_t_key_does_nothing_in_beach_list() {
+        let mut app = App::new();
+        app.state = AppState::BeachList;
+        assert!(!app.tide_chart_expanded);
+
+        app.handle_key(key_event(KeyCode::Char('t')));
+        // 't' in BeachList should not toggle tide chart (no handler)
+        assert!(!app.tide_chart_expanded, "t key should not toggle in BeachList");
+    }
+
+    #[test]
+    fn test_t_key_does_nothing_in_plan_trip() {
+        let mut app = App::new();
+        app.state = AppState::PlanTrip;
+        assert!(!app.tide_chart_expanded);
+
+        app.handle_key(key_event(KeyCode::Char('t')));
+        // 't' in PlanTrip should not toggle tide chart (no handler)
+        assert!(!app.tide_chart_expanded, "t key should not toggle in PlanTrip");
     }
 }
