@@ -14,7 +14,7 @@ pub use water_quality::{WaterQualityClient, WaterQualityError};
 #[allow(unused_imports)]
 pub use weather::{HourlyForecast, WeatherClient, WeatherData, WeatherError};
 
-use chrono::{DateTime, Local, NaiveDate, NaiveTime, Utc};
+use chrono::{DateTime, Local, NaiveDate, NaiveTime, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Represents a beach location in Vancouver
@@ -107,6 +107,35 @@ pub enum TideState {
     Falling,
     High,
     Low,
+}
+
+impl TideInfo {
+    /// Generates estimated tide heights for hours 6am-9pm (16 hours)
+    ///
+    /// Uses a simplified sinusoidal tide model based on the next high/low events.
+    /// Returns a vector of 16 heights, one per hour from 6am to 9pm.
+    ///
+    /// # Arguments
+    /// * `max_height` - Maximum tide height for the region (e.g., 4.8m for Vancouver)
+    pub fn hourly_heights(&self, max_height: f64) -> Vec<f64> {
+        let mut heights = Vec::with_capacity(16);
+
+        // Get phase from next_high time if available
+        let phase = self
+            .next_high
+            .as_ref()
+            .map(|h| h.time.hour() as f64)
+            .unwrap_or(12.0);
+
+        for hour in 6..=21 {
+            // Simple sine wave approximation (two tides per day)
+            let t = (hour as f64 - phase) * std::f64::consts::PI / 6.0;
+            let height = (max_height / 2.0) * (1.0 + t.cos());
+            heights.push(height.clamp(0.0, max_height));
+        }
+
+        heights
+    }
 }
 
 /// Water quality information from monitoring stations
@@ -423,5 +452,49 @@ mod tests {
 
         assert_eq!(wq.effective_status(), WaterStatus::Safe,
             "Fresh safe water should stay safe");
+    }
+
+    #[test]
+    fn test_tide_info_hourly_heights_returns_16_values() {
+        let tide_info = TideInfo {
+            current_height: 2.5,
+            tide_state: TideState::Rising,
+            next_high: Some(TideEvent {
+                time: Local::now(),
+                height: 4.2,
+            }),
+            next_low: Some(TideEvent {
+                time: Local::now(),
+                height: 0.8,
+            }),
+            fetched_at: Utc::now(),
+        };
+
+        let heights = tide_info.hourly_heights(4.8);
+        assert_eq!(heights.len(), 16, "Should return 16 heights (6am-9pm)");
+    }
+
+    #[test]
+    fn test_tide_info_hourly_heights_within_range() {
+        let tide_info = TideInfo {
+            current_height: 2.5,
+            tide_state: TideState::Rising,
+            next_high: Some(TideEvent {
+                time: Local::now(),
+                height: 4.2,
+            }),
+            next_low: None,
+            fetched_at: Utc::now(),
+        };
+
+        let heights = tide_info.hourly_heights(4.8);
+        for (i, height) in heights.iter().enumerate() {
+            assert!(
+                *height >= 0.0 && *height <= 4.8,
+                "Height at index {} should be in range 0-4.8, got {}",
+                i,
+                height
+            );
+        }
     }
 }

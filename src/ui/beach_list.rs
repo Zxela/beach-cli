@@ -66,6 +66,33 @@ fn temperature_color(temp: f64) -> Color {
     }
 }
 
+/// Block characters for tide height visualization (8 levels)
+const TIDE_BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+/// Converts a tide height to a block character
+fn height_to_block(height: f64, max_height: f64) -> char {
+    let normalized = (height / max_height).clamp(0.0, 1.0);
+    let index = ((normalized * 7.0).round() as usize).min(7);
+    TIDE_BLOCKS[index]
+}
+
+/// Generates a sparkline string for tide heights
+fn generate_tide_sparkline(heights: &[f64], max_height: f64, current_hour_index: Option<usize>) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+
+    for (i, height) in heights.iter().enumerate() {
+        let block = height_to_block(*height, max_height);
+        let style = if current_hour_index == Some(i) {
+            Style::default().fg(Color::Yellow) // Highlight current hour
+        } else {
+            Style::default().fg(Color::Cyan)
+        };
+        spans.push(Span::styled(block.to_string(), style));
+    }
+
+    spans
+}
+
 /// Generates a contextual hint for a beach based on current conditions.
 ///
 /// Hints are prioritized in the following order:
@@ -323,6 +350,14 @@ fn render_list(frame: &mut Frame, app: &App, area: Rect) {
     let beaches = all_beaches();
     let mut lines: Vec<Line> = Vec::with_capacity(beaches.len());
 
+    // Calculate current hour index for sparkline highlighting (6am = 0, 7am = 1, etc.)
+    let current_hour = Local::now().hour() as usize;
+    let sparkline_pos = if (6..=21).contains(&current_hour) {
+        Some(current_hour - 6)
+    } else {
+        None
+    };
+
     for (index, beach) in beaches.iter().enumerate() {
         let is_selected = index == app.selected_index;
 
@@ -360,6 +395,18 @@ fn render_list(frame: &mut Frame, app: &App, area: Rect) {
             None => ("\u{26AA}", Color::Gray), // ⚪
         };
 
+        // Generate tide sparkline
+        let tide_sparkline_spans = match conditions.and_then(|c| c.tides.as_ref()) {
+            Some(tides) => {
+                let heights = tides.hourly_heights(4.8);
+                generate_tide_sparkline(&heights, 4.8, sparkline_pos)
+            }
+            None => vec![Span::styled(
+                "────────────────",
+                Style::default().fg(Color::DarkGray),
+            )],
+        };
+
         // Generate contextual hint
         let hint = generate_contextual_hint(conditions);
 
@@ -378,20 +425,24 @@ fn render_list(frame: &mut Frame, app: &App, area: Rect) {
             Style::default()
         };
 
-        // Format: " ▸ Beach Name                  22°C  ☀   🟢   Hint text"
+        // Format: " ▸ Beach Name              22°C ☀ 🟢 ▁▂▃▄▅▆▇█▇▆▅▄▃▂▁▁  Hint"
         // Pad beach name to fixed width for alignment
-        let name_padded = format!("{:<25}", beach.name);
+        let name_padded = format!("{:<18}", beach.name);
 
         let mut spans = vec![
             Span::styled(cursor, cursor_style),
             Span::styled(name_padded, name_style),
-            Span::raw("  "),
+            Span::raw(" "),
             Span::styled(temp_str, Style::default().fg(temp_color)),
-            Span::raw("  "),
+            Span::raw(" "),
             Span::raw(weather_icon_str),
-            Span::raw("   "),
+            Span::raw(" "),
             Span::styled(water_icon_str, Style::default().fg(water_color)),
+            Span::raw(" "),
         ];
+
+        // Add tide sparkline spans
+        spans.extend(tide_sparkline_spans);
 
         // Add contextual hint in muted color if present
         if let Some(hint_text) = hint {
