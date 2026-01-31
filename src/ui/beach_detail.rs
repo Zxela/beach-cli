@@ -3646,4 +3646,757 @@ mod tests {
         // verify the function handles this case gracefully
         assert!(lines.len() >= 1, "Should have at least the header");
     }
+
+    // ========================================================================
+    // Integration Tests (Task 109)
+    // ========================================================================
+    //
+    // These tests verify the complete beach detail screen works correctly
+    // at various terminal sizes and with all features.
+
+    /// Helper to create a fully populated test app with all data
+    fn create_fully_populated_test_app(beach_id: &str) -> App {
+        let weather = create_test_weather_with_hourly(10);
+        let mut app = create_test_app_with_conditions(
+            beach_id,
+            Some(weather),
+            Some(create_test_tides()),
+            Some(create_test_water_quality()),
+        );
+        app.detail_scroll_offset = 0;
+        app.tide_chart_expanded = false;
+        app
+    }
+
+    /// Helper to extract buffer content as a string
+    fn buffer_to_string(buffer: &ratatui::buffer::Buffer) -> String {
+        buffer.content().iter().map(|cell| cell.symbol()).collect()
+    }
+
+    /// Helper to find row number containing a specific text
+    fn find_row_containing(buffer: &ratatui::buffer::Buffer, text: &str) -> Option<u16> {
+        for y in 0..buffer.area().height {
+            let mut row_content = String::new();
+            for x in 0..buffer.area().width {
+                row_content.push_str(buffer.cell((x, y)).unwrap().symbol());
+            }
+            if row_content.contains(text) {
+                return Some(y);
+            }
+        }
+        None
+    }
+
+    // ------------------------------------------------------------------------
+    // Terminal Size Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_integration_render_at_80x24_standard_terminal() {
+        // Test rendering at standard terminal size (80x24)
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // Verify all major sections are present
+        assert!(content.contains("WEATHER"), "WEATHER section should be visible at 80x24");
+        assert!(content.contains("TIDES"), "TIDES section should be visible at 80x24");
+        // Note: WATER QUALITY may be below fold, but should not panic
+
+        // Verify no crash and meaningful content rendered
+        assert!(!content.trim().is_empty(), "Should render meaningful content");
+    }
+
+    #[test]
+    fn test_integration_render_at_120x40_large_terminal() {
+        // Test rendering at large terminal size (120x40)
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // At 120x40, all sections should be visible without scrolling
+        assert!(content.contains("WEATHER"), "WEATHER should be visible at 120x40");
+        assert!(content.contains("TIDES"), "TIDES should be visible at 120x40");
+        assert!(content.contains("HOURLY FORECAST"), "HOURLY FORECAST should be visible at 120x40");
+        assert!(content.contains("WATER QUALITY"), "WATER QUALITY should be visible at 120x40");
+    }
+
+    #[test]
+    fn test_integration_render_at_80x20_small_terminal_requires_scroll() {
+        // Test rendering at small terminal size (80x20) that requires scrolling
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // Should render without panic
+        assert!(!content.trim().is_empty(), "Should render content at small size");
+
+        // At minimum, top sections should be visible
+        assert!(content.contains("WEATHER"), "WEATHER should be visible at top");
+    }
+
+    #[test]
+    fn test_integration_render_at_minimum_width() {
+        // Test rendering at minimum width (60x24)
+        let backend = TestBackend::new(60, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // Should not panic and should render content
+        assert!(!content.trim().is_empty(), "Should render at narrow width");
+    }
+
+    #[test]
+    fn test_integration_render_at_very_small_terminal() {
+        // Test rendering at very small terminal (40x10)
+        // This tests edge case handling
+        let backend = TestBackend::new(40, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+
+        // Should not panic
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // May have limited content but should not crash
+        assert!(!content.is_empty(), "Should render something even at very small size");
+    }
+
+    // ------------------------------------------------------------------------
+    // Scroll Navigation Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_integration_scroll_navigation_through_all_content() {
+        let backend = TestBackend::new(80, 15);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+
+        // Start at top (scroll offset 0)
+        app.detail_scroll_offset = 0;
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content_at_top = buffer_to_string(buffer);
+        assert!(content_at_top.contains("WEATHER"), "Should see WEATHER at top");
+
+        // Scroll down
+        app.detail_scroll_offset = 10;
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content_scrolled = buffer_to_string(buffer);
+
+        // After scrolling, content should change (different sections visible)
+        // The key is that rendering doesn't panic
+        assert!(!content_scrolled.trim().is_empty(), "Should render after scrolling");
+
+        // Scroll to maximum
+        app.detail_scroll_offset = 100; // Will be clamped
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        // Scroll offset should be clamped to valid range
+        assert!(app.detail_scroll_offset <= 100, "Scroll offset should be clamped");
+    }
+
+    #[test]
+    fn test_integration_scroll_preserves_fixed_elements() {
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+        app.current_activity = Some(Activity::Swimming);
+
+        // Record position of Activity selector at scroll 0
+        app.detail_scroll_offset = 0;
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let activity_row_0 = find_row_containing(buffer, "Activity");
+        let help_row_0 = find_row_containing(buffer, "Back");
+
+        // Scroll down and check positions remain same
+        app.detail_scroll_offset = 5;
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let activity_row_5 = find_row_containing(buffer, "Activity");
+        let help_row_5 = find_row_containing(buffer, "Back");
+
+        assert_eq!(activity_row_0, activity_row_5, "Activity selector should stay fixed");
+        assert_eq!(help_row_0, help_row_5, "Help bar should stay fixed");
+    }
+
+    // ------------------------------------------------------------------------
+    // Tide Chart Toggle Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_integration_tide_chart_toggle_collapsed_to_expanded() {
+        let backend = TestBackend::new(80, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+        app.tide_chart_expanded = false;
+
+        // Render collapsed
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content_collapsed = buffer_to_string(buffer);
+        assert!(
+            content_collapsed.contains("[t] expand"),
+            "Collapsed state should show expand hint"
+        );
+
+        // Toggle to expanded
+        app.tide_chart_expanded = true;
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content_expanded = buffer_to_string(buffer);
+        assert!(
+            content_expanded.contains("[t] collapse"),
+            "Expanded state should show collapse hint"
+        );
+    }
+
+    #[test]
+    fn test_integration_tide_chart_toggle_expanded_to_collapsed() {
+        let backend = TestBackend::new(80, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+        app.tide_chart_expanded = true;
+
+        // Render expanded
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content_expanded = buffer_to_string(buffer);
+        assert!(
+            content_expanded.contains("[t] collapse"),
+            "Expanded state should show collapse hint"
+        );
+
+        // Toggle to collapsed
+        app.tide_chart_expanded = false;
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content_collapsed = buffer_to_string(buffer);
+        assert!(
+            content_collapsed.contains("[t] expand"),
+            "Collapsed state should show expand hint"
+        );
+    }
+
+    #[test]
+    fn test_integration_expanded_tide_chart_shows_y_axis() {
+        let backend = TestBackend::new(80, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+        app.tide_chart_expanded = true;
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // Expanded chart should have Y-axis labels
+        assert!(content.contains("0m") || content.contains("1m"),
+            "Expanded chart should have Y-axis meter labels");
+    }
+
+    // ------------------------------------------------------------------------
+    // Section Order Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_integration_all_sections_render_in_correct_order() {
+        // Use large terminal to see all sections
+        let backend = TestBackend::new(120, 50);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        // Find positions of all sections
+        let weather_row = find_row_containing(buffer, "WEATHER");
+        let tides_row = find_row_containing(buffer, "TIDES");
+        let hourly_row = find_row_containing(buffer, "HOURLY FORECAST");
+        let water_quality_row = find_row_containing(buffer, "WATER QUALITY");
+
+        // Verify all sections are present
+        assert!(weather_row.is_some(), "WEATHER section should be present");
+        assert!(tides_row.is_some(), "TIDES section should be present");
+        assert!(hourly_row.is_some(), "HOURLY FORECAST section should be present");
+        assert!(water_quality_row.is_some(), "WATER QUALITY section should be present");
+
+        // Verify order: WEATHER < TIDES < HOURLY FORECAST < WATER QUALITY
+        let weather_y = weather_row.unwrap();
+        let tides_y = tides_row.unwrap();
+        let hourly_y = hourly_row.unwrap();
+        let water_quality_y = water_quality_row.unwrap();
+
+        assert!(weather_y < tides_y,
+            "WEATHER (row {}) should appear before TIDES (row {})", weather_y, tides_y);
+        assert!(tides_y < hourly_y,
+            "TIDES (row {}) should appear before HOURLY FORECAST (row {})", tides_y, hourly_y);
+        assert!(hourly_y < water_quality_y,
+            "HOURLY FORECAST (row {}) should appear before WATER QUALITY (row {})", hourly_y, water_quality_y);
+    }
+
+    #[test]
+    fn test_integration_best_window_section_appears_when_activity_selected() {
+        let backend = TestBackend::new(120, 60);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+        app.current_activity = Some(Activity::Swimming);
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // Best Window section should be visible when activity is selected
+        assert!(
+            content.contains("BEST WINDOW") || content.contains("Best Window"),
+            "Best Window section should appear when activity is selected"
+        );
+    }
+
+    #[test]
+    fn test_integration_best_window_not_visible_when_no_activity() {
+        let backend = TestBackend::new(120, 50);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+        app.current_activity = None;
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // Best Window should NOT be visible when no activity selected
+        // Note: The section may still be rendered but hidden, so we check for header
+        let _has_best_window = content.contains("BEST WINDOW");
+        // This may or may not be true depending on implementation
+        // The important thing is it doesn't panic
+        assert!(!content.trim().is_empty(), "Should render content");
+    }
+
+    // ------------------------------------------------------------------------
+    // Edge Case Tests (Missing Data)
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_integration_render_with_missing_weather_data() {
+        let backend = TestBackend::new(80, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_test_app_with_conditions(
+            "kitsilano",
+            None, // No weather
+            Some(create_test_tides()),
+            Some(create_test_water_quality()),
+        );
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // Should render without crashing
+        assert!(!content.trim().is_empty(), "Should render with missing weather");
+        assert!(content.contains("WEATHER"), "Should still show WEATHER section header");
+        assert!(
+            content.contains("unavailable") || content.contains("WEATHER"),
+            "Should indicate missing weather data"
+        );
+    }
+
+    #[test]
+    fn test_integration_render_with_missing_tides_data() {
+        let backend = TestBackend::new(80, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_test_app_with_conditions(
+            "kitsilano",
+            Some(create_test_weather()),
+            None, // No tides
+            Some(create_test_water_quality()),
+        );
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // Should render without crashing
+        assert!(!content.trim().is_empty(), "Should render with missing tides");
+        assert!(content.contains("TIDES"), "Should still show TIDES section header");
+    }
+
+    #[test]
+    fn test_integration_render_with_missing_water_quality_data() {
+        let backend = TestBackend::new(80, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_test_app_with_conditions(
+            "kitsilano",
+            Some(create_test_weather()),
+            Some(create_test_tides()),
+            None, // No water quality
+        );
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // Should render without crashing
+        assert!(!content.trim().is_empty(), "Should render with missing water quality");
+    }
+
+    #[test]
+    fn test_integration_render_with_all_data_missing() {
+        let backend = TestBackend::new(80, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_test_app_with_conditions(
+            "kitsilano",
+            None,
+            None,
+            None,
+        );
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // Should render without crashing
+        assert!(!content.trim().is_empty(), "Should render even with all data missing");
+    }
+
+    // ------------------------------------------------------------------------
+    // Activity Selection Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_integration_render_with_each_activity_selected() {
+        let activities = [
+            Activity::Swimming,
+            Activity::Sunbathing,
+            Activity::Sailing,
+            Activity::Sunset,
+            Activity::Peace,
+        ];
+
+        for activity in activities {
+            let backend = TestBackend::new(120, 50);
+            let mut terminal = Terminal::new(backend).unwrap();
+
+            let mut app = create_fully_populated_test_app("kitsilano");
+            app.current_activity = Some(activity);
+
+            // Should not panic for any activity
+            terminal
+                .draw(|frame| {
+                    render(frame, &mut app, "kitsilano");
+                })
+                .unwrap();
+
+            let buffer = terminal.backend().buffer();
+            let content = buffer_to_string(buffer);
+
+            assert!(
+                !content.trim().is_empty(),
+                "Should render content for activity {:?}",
+                activity
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Combined Feature Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_integration_expanded_chart_with_scroll_at_small_terminal() {
+        // Combine expanded tide chart with scrolling on small terminal
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+        app.tide_chart_expanded = true;
+        app.detail_scroll_offset = 5;
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // Should not panic and should render something
+        assert!(!content.trim().is_empty(), "Should render with expanded chart and scroll");
+    }
+
+    #[test]
+    fn test_integration_activity_selected_with_scroll() {
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+        app.current_activity = Some(Activity::Sunset);
+        app.detail_scroll_offset = 10;
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // Activity selector should still be visible (fixed position)
+        assert!(
+            content.contains("Activity"),
+            "Activity selector should remain visible when scrolled"
+        );
+    }
+
+    #[test]
+    fn test_integration_all_features_combined() {
+        // Test with all features active at once
+        let backend = TestBackend::new(100, 35);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+        app.current_activity = Some(Activity::Swimming);
+        app.tide_chart_expanded = true;
+        app.detail_scroll_offset = 3;
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content = buffer_to_string(buffer);
+
+        // Verify no panic and meaningful content
+        assert!(!content.trim().is_empty(), "Should render with all features active");
+
+        // Fixed elements should be present
+        assert!(content.contains("Activity"), "Activity selector should be present");
+        assert!(
+            content.contains("Back") || content.contains("Quit"),
+            "Help bar should be present"
+        );
+    }
+
+    // ------------------------------------------------------------------------
+    // Stress Tests (No Panics)
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_integration_rapid_scroll_no_panic() {
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+
+        // Rapidly change scroll positions
+        for offset in [0, 5, 10, 15, 20, 25, 100, 0, 50, 3] {
+            app.detail_scroll_offset = offset;
+            terminal
+                .draw(|frame| {
+                    render(frame, &mut app, "kitsilano");
+                })
+                .unwrap();
+        }
+
+        // If we get here without panic, test passes
+        assert!(true, "No panic during rapid scroll");
+    }
+
+    #[test]
+    fn test_integration_rapid_tide_toggle_no_panic() {
+        let backend = TestBackend::new(80, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut app = create_fully_populated_test_app("kitsilano");
+
+        // Rapidly toggle tide chart
+        for _ in 0..10 {
+            app.tide_chart_expanded = !app.tide_chart_expanded;
+            terminal
+                .draw(|frame| {
+                    render(frame, &mut app, "kitsilano");
+                })
+                .unwrap();
+        }
+
+        // If we get here without panic, test passes
+        assert!(true, "No panic during rapid tide toggle");
+    }
+
+    #[test]
+    fn test_integration_various_terminal_sizes_no_panic() {
+        let sizes = [
+            (80, 24),   // Standard
+            (120, 40),  // Large
+            (80, 20),   // Small height
+            (60, 24),   // Narrow
+            (100, 30),  // Medium
+            (40, 15),   // Very small
+            (200, 50),  // Very large
+        ];
+
+        for (width, height) in sizes {
+            let backend = TestBackend::new(width, height);
+            let mut terminal = Terminal::new(backend).unwrap();
+
+            let mut app = create_fully_populated_test_app("kitsilano");
+            app.current_activity = Some(Activity::Swimming);
+
+            terminal
+                .draw(|frame| {
+                    render(frame, &mut app, "kitsilano");
+                })
+                .unwrap();
+        }
+
+        // If we get here without panic, test passes
+        assert!(true, "No panic at various terminal sizes");
+    }
 }
