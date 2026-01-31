@@ -277,6 +277,22 @@ impl App {
                 KeyCode::Char('p') => {
                     self.state = AppState::PlanTrip;
                 }
+                // Activity selection (1-5)
+                KeyCode::Char('1') => {
+                    self.current_activity = Some(Activity::Swimming);
+                }
+                KeyCode::Char('2') => {
+                    self.current_activity = Some(Activity::Sunbathing);
+                }
+                KeyCode::Char('3') => {
+                    self.current_activity = Some(Activity::Sailing);
+                }
+                KeyCode::Char('4') => {
+                    self.current_activity = Some(Activity::Sunset);
+                }
+                KeyCode::Char('5') => {
+                    self.current_activity = Some(Activity::Peace);
+                }
                 _ => {}
             },
             AppState::BeachDetail(_) => match key_event.code {

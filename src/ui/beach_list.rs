@@ -186,6 +186,7 @@ fn generate_contextual_hint(conditions: Option<&BeachConditions>) -> Option<Stri
 /// Renders the beach list screen
 ///
 /// Displays all Vancouver beaches in a bordered list with:
+/// - Smart header with time, weather, and best recommendation
 /// - Beach name
 /// - Current temperature
 /// - Weather condition icon
@@ -200,20 +201,121 @@ fn generate_contextual_hint(conditions: Option<&BeachConditions>) -> Option<Stri
 pub fn render_beach_list(frame: &mut Frame, app: &App) {
     let area = frame.area();
 
-    // Create main layout with content area and help text at bottom
+    // Create main layout with header, content area, and help text at bottom
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(4), // Smart header
             Constraint::Min(3),    // Beach list
             Constraint::Length(1), // Help text
         ])
         .split(area);
 
+    // Render smart header
+    render_smart_header(frame, app, chunks[0]);
+
     // Render the beach list
-    render_list(frame, app, chunks[0]);
+    render_list(frame, app, chunks[1]);
 
     // Render help text
-    render_help(frame, chunks[1]);
+    render_help(frame, chunks[2]);
+}
+
+/// Renders the smart header with time, weather, recommendation, and sunset info
+fn render_smart_header(frame: &mut Frame, app: &App, area: Rect) {
+    let now = Local::now();
+    let time_str = now.format("%a %b %d, %H:%M").to_string();
+
+    // Get current weather from first beach with data
+    let current_temp = app
+        .beach_conditions
+        .values()
+        .find_map(|c| c.weather.as_ref())
+        .map(|w| format!("{:.0}°C {}", w.temperature, weather_icon(&w.condition)))
+        .unwrap_or_else(|| "--°C".to_string());
+
+    // Get sunset info
+    let sunset_info = app
+        .beach_conditions
+        .values()
+        .find_map(|c| c.weather.as_ref())
+        .map(|w| {
+            let now_time = now.time();
+            let sunset = w.sunset;
+            let mins_until = (sunset.hour() as i32 * 60 + sunset.minute() as i32)
+                - (now_time.hour() as i32 * 60 + now_time.minute() as i32);
+            if mins_until > 0 {
+                let hours = mins_until / 60;
+                let mins = mins_until % 60;
+                if hours > 0 {
+                    format!("Sunset in {}h {}m", hours, mins)
+                } else {
+                    format!("Sunset in {}m", mins)
+                }
+            } else {
+                "Sunset passed".to_string()
+            }
+        })
+        .unwrap_or_default();
+
+    // Build header lines
+    let width = area.width as usize;
+    let separator = "─".repeat(width.saturating_sub(2));
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(
+                "VANBEACH",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::styled(time_str, Style::default().fg(Color::White)),
+            Span::raw("  "),
+            Span::styled(current_temp, Style::default().fg(Color::Yellow)),
+        ]),
+        Line::from(Span::styled(separator, Style::default().fg(Color::DarkGray))),
+    ];
+
+    // Best beach recommendation
+    if let Some(best) = app.find_best_beach_now() {
+        lines.push(Line::from(vec![
+            Span::styled("★ ", Style::default().fg(Color::Yellow)),
+            Span::styled("Best now: ", Style::default().fg(Color::White)),
+            Span::styled(
+                best.beach_name.clone(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" — {}", best.reasons.join(", ")),
+                Style::default().fg(Color::Gray),
+            ),
+        ]));
+    } else if app.current_activity.is_some() {
+        lines.push(Line::from(Span::styled(
+            "No great options right now — check back later",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            "Press 1-5 to select an activity for recommendations",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    // Sunset info
+    if !sunset_info.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!("  {}", sunset_info),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
 }
 
 /// Renders the beach list content
