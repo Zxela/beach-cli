@@ -115,7 +115,7 @@ release-draft: ## Create draft release on GitHub
 
 ## Tagging & Versioning
 
-release-patch: ## Bump patch version, commit, push, and create release tag
+release-patch: check ## Bump patch version, commit, push, and create release tag
 	@make --no-print-directory bump-patch
 	@NEW_VER=$$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'); \
 	git add Cargo.toml && \
@@ -123,7 +123,7 @@ release-patch: ## Bump patch version, commit, push, and create release tag
 	git push && \
 	make --no-print-directory tag
 
-release-minor: ## Bump minor version, commit, push, and create release tag
+release-minor: check ## Bump minor version, commit, push, and create release tag
 	@make --no-print-directory bump-minor
 	@NEW_VER=$$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'); \
 	git add Cargo.toml && \
@@ -131,7 +131,7 @@ release-minor: ## Bump minor version, commit, push, and create release tag
 	git push && \
 	make --no-print-directory tag
 
-release-major: ## Bump major version, commit, push, and create release tag
+release-major: check ## Bump major version, commit, push, and create release tag
 	@make --no-print-directory bump-major
 	@NEW_VER=$$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'); \
 	git add Cargo.toml && \
