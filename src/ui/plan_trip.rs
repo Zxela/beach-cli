@@ -73,7 +73,7 @@ fn get_tide_height_at_hour(app: &App, beach_id: &str, hour: u8) -> Option<f64> {
     let heights = tides.hourly_heights(4.8);
 
     // Map hour (6-21) to index (0-15)
-    if hour >= 6 && hour <= 21 {
+    if (6..=21).contains(&hour) {
         let index = (hour - 6) as usize;
         heights.get(index).copied()
     } else {
