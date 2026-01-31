@@ -3,12 +3,12 @@
 //! This module provides functionality to fetch weather data from the Open-Meteo API
 //! and parse it into our Weather data structures.
 
-use chrono::{NaiveDateTime, NaiveTime, Utc};
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use super::{Weather, WeatherCondition};
+use super::{HourlyForecast, Weather, WeatherCondition};
 
 /// Base URL for the Open-Meteo API
 const OPEN_METEO_BASE_URL: &str = "https://api.open-meteo.com/v1/forecast";
@@ -104,19 +104,19 @@ impl WeatherClient {
     /// * `lon` - Longitude coordinate
     ///
     /// # Returns
-    /// * `Ok(Weather)` - Weather data for the location
+    /// * `Ok(Weather)` - Weather data for the location including hourly forecasts for today
     /// * `Err(WeatherError)` - If the request or parsing fails
     pub async fn fetch_weather(&self, lat: f64, lon: f64) -> Result<Weather, WeatherError> {
         let url = format!(
-            "{}?latitude={}&longitude={}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m&daily=sunrise,sunset,uv_index_max&timezone={}",
+            "{}?latitude={}&longitude={}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m&daily=sunrise,sunset,uv_index_max&hourly=temperature_2m,apparent_temperature,weathercode,windspeed_10m,winddirection_10m,uv_index,precipitation_probability&forecast_days=2&timezone={}",
             OPEN_METEO_BASE_URL, lat, lon, self.timezone
         );
 
         let response = self.client.get(&url).send().await?;
         let text = response.text().await?;
-        let api_response: OpenMeteoResponse = serde_json::from_str(&text)?;
+        let api_response: OpenMeteoResponseFull = serde_json::from_str(&text)?;
 
-        self.parse_response(api_response)
+        self.parse_response_full(api_response)
     }
 
     /// Fetch weather data with 48-hour hourly forecasts for the given coordinates
@@ -146,7 +146,8 @@ impl WeatherClient {
         self.parse_response_with_hourly(api_response)
     }
 
-    /// Parse the Open-Meteo API response into a Weather struct
+    /// Parse the Open-Meteo API response into a Weather struct (kept for test compatibility)
+    #[allow(dead_code)]
     fn parse_response(&self, response: OpenMeteoResponse) -> Result<Weather, WeatherError> {
         let current = response.current;
         let daily = response.daily;
@@ -289,6 +290,153 @@ impl WeatherClient {
 
         Ok(forecasts)
     }
+
+    /// Parse the Open-Meteo API response with full hourly data into a Weather struct
+    /// This populates the Weather.hourly field with today's hourly forecasts
+    fn parse_response_full(&self, response: OpenMeteoResponseFull) -> Result<Weather, WeatherError> {
+        let current = response.current;
+        let daily = response.daily;
+
+        // Extract temperature and weather data
+        let temperature = current.temperature_2m;
+        let feels_like = current.apparent_temperature;
+        let humidity = current.relative_humidity_2m as u8;
+        let wind = current.wind_speed_10m;
+
+        // Map weather code to condition
+        let condition = weather_code_to_condition(current.weather_code);
+
+        // Extract UV index (first day's max)
+        let uv = daily
+            .uv_index_max
+            .first()
+            .copied()
+            .ok_or_else(|| WeatherError::MissingField("uv_index_max".to_string()))?;
+
+        // Extract sunrise time (first day)
+        let sunrise_str = daily
+            .sunrise
+            .first()
+            .ok_or_else(|| WeatherError::MissingField("sunrise".to_string()))?;
+        let sunrise = parse_time(sunrise_str)?;
+
+        // Extract sunset time (first day)
+        let sunset_str = daily
+            .sunset
+            .first()
+            .ok_or_else(|| WeatherError::MissingField("sunset".to_string()))?;
+        let sunset = parse_time(sunset_str)?;
+
+        // Extract today's date from the first daily time entry
+        let today = daily
+            .sunrise
+            .first()
+            .and_then(|s| s.split('T').next())
+            .and_then(|date_str| NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok())
+            .unwrap_or_else(|| chrono::Local::now().date_naive());
+
+        // Parse hourly forecasts for today only, defaulting to empty vec if missing
+        let hourly = match response.hourly {
+            Some(hourly_data) => self.parse_hourly_data_full(&hourly_data, today),
+            None => Vec::new(),
+        };
+
+        Ok(Weather {
+            temperature,
+            feels_like,
+            condition,
+            humidity,
+            wind,
+            uv,
+            sunrise,
+            sunset,
+            fetched_at: Utc::now(),
+            hourly,
+        })
+    }
+
+    /// Parse full hourly weather data arrays into HourlyForecast structs, filtered to today only
+    fn parse_hourly_data_full(
+        &self,
+        hourly: &HourlyWeatherFull,
+        today: NaiveDate,
+    ) -> Vec<HourlyForecast> {
+        let len = hourly.time.len();
+
+        // Validate that required arrays have the same length; if not, return empty
+        if hourly.temperature_2m.len() != len
+            || hourly.weathercode.len() != len
+            || hourly.windspeed_10m.len() != len
+            || hourly.uv_index.len() != len
+        {
+            return Vec::new();
+        }
+
+        let mut forecasts = Vec::new();
+
+        for i in 0..len {
+            // Parse datetime from time string
+            let time = match parse_datetime(&hourly.time[i]) {
+                Ok(dt) => dt,
+                Err(_) => continue, // Skip invalid times
+            };
+
+            // Filter to today's date only
+            if time.date() != today {
+                continue;
+            }
+
+            // Get feels_like, defaulting to temperature if not available
+            let feels_like = hourly
+                .apparent_temperature
+                .get(i)
+                .copied()
+                .unwrap_or(hourly.temperature_2m[i]);
+
+            // Get wind direction, defaulting to 0 (N) if not available
+            let wind_direction_degrees = hourly
+                .winddirection_10m
+                .get(i)
+                .copied()
+                .unwrap_or(0.0);
+
+            // Get precipitation probability, defaulting to 0 if not available
+            let precipitation_chance = hourly
+                .precipitation_probability
+                .get(i)
+                .and_then(|v| *v)
+                .unwrap_or(0);
+
+            forecasts.push(HourlyForecast {
+                hour: time.hour() as u8,
+                temperature: hourly.temperature_2m[i],
+                feels_like,
+                condition: weather_code_to_condition(hourly.weathercode[i]),
+                wind: hourly.windspeed_10m[i],
+                wind_direction: degrees_to_direction(wind_direction_degrees),
+                uv: hourly.uv_index[i],
+                precipitation_chance,
+            });
+        }
+
+        forecasts
+    }
+}
+
+/// Convert wind direction in degrees to compass direction string
+fn degrees_to_direction(degrees: f64) -> String {
+    // Normalize to 0-360 range
+    let deg = ((degrees % 360.0) + 360.0) % 360.0;
+
+    // Map to 16 compass points
+    let directions = [
+        "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+        "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+    ];
+
+    // Each direction covers 22.5 degrees, offset by 11.25 to center
+    let index = ((deg + 11.25) / 22.5) as usize % 16;
+    directions[index].to_string()
 }
 
 /// Parse a datetime string in ISO 8601 format (e.g., "2024-07-15T05:30") to NaiveDateTime
@@ -337,8 +485,9 @@ pub fn weather_code_to_condition(code: u8) -> WeatherCondition {
     }
 }
 
-/// Open-Meteo API response structure
+/// Open-Meteo API response structure (used in tests for backward compatibility)
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct OpenMeteoResponse {
     current: CurrentWeather,
     daily: DailyWeather,
@@ -382,6 +531,31 @@ struct HourlyWeather {
     weathercode: Vec<u8>,
     windspeed_10m: Vec<f64>,
     uv_index: Vec<f64>,
+}
+
+/// Open-Meteo API response structure with full hourly data for fetch_weather
+#[derive(Debug, Deserialize)]
+struct OpenMeteoResponseFull {
+    current: CurrentWeather,
+    daily: DailyWeather,
+    #[serde(default)]
+    hourly: Option<HourlyWeatherFull>,
+}
+
+/// Hourly weather data from Open-Meteo with all fields needed for HourlyForecast
+#[derive(Debug, Deserialize)]
+struct HourlyWeatherFull {
+    time: Vec<String>,
+    temperature_2m: Vec<f64>,
+    #[serde(default)]
+    apparent_temperature: Vec<f64>,
+    weathercode: Vec<u8>,
+    windspeed_10m: Vec<f64>,
+    #[serde(default)]
+    winddirection_10m: Vec<f64>,
+    uv_index: Vec<f64>,
+    #[serde(default)]
+    precipitation_probability: Vec<Option<u8>>,
 }
 
 #[cfg(test)]
@@ -920,5 +1094,371 @@ mod tests {
         // Verify the basic weather data is still correctly parsed
         assert!((weather.temperature - 22.5).abs() < 0.01);
         assert_eq!(weather.condition, WeatherCondition::PartlyCloudy);
+    }
+
+    /// Sample valid Open-Meteo API response with full hourly data for parse_response_full
+    const VALID_RESPONSE_FULL: &str = r#"{
+        "latitude": 49.28,
+        "longitude": -123.12,
+        "generationtime_ms": 0.123,
+        "utc_offset_seconds": -25200,
+        "timezone": "America/Vancouver",
+        "timezone_abbreviation": "PDT",
+        "elevation": 5.0,
+        "current_units": {
+            "time": "iso8601",
+            "interval": "seconds",
+            "temperature_2m": "°C",
+            "relative_humidity_2m": "%",
+            "apparent_temperature": "°C",
+            "weather_code": "wmo code",
+            "wind_speed_10m": "km/h",
+            "wind_direction_10m": "°"
+        },
+        "current": {
+            "time": "2024-07-15T14:00",
+            "interval": 900,
+            "temperature_2m": 22.5,
+            "relative_humidity_2m": 65,
+            "apparent_temperature": 23.8,
+            "weather_code": 2,
+            "wind_speed_10m": 12.5,
+            "wind_direction_10m": 270
+        },
+        "daily_units": {
+            "time": "iso8601",
+            "sunrise": "iso8601",
+            "sunset": "iso8601",
+            "uv_index_max": ""
+        },
+        "daily": {
+            "time": ["2024-07-15", "2024-07-16"],
+            "sunrise": ["2024-07-15T05:30", "2024-07-16T05:31"],
+            "sunset": ["2024-07-15T21:15", "2024-07-16T21:14"],
+            "uv_index_max": [7.5, 8.0]
+        },
+        "hourly_units": {
+            "time": "iso8601",
+            "temperature_2m": "°C",
+            "apparent_temperature": "°C",
+            "weathercode": "wmo code",
+            "windspeed_10m": "km/h",
+            "winddirection_10m": "°",
+            "uv_index": "",
+            "precipitation_probability": "%"
+        },
+        "hourly": {
+            "time": [
+                "2024-07-15T00:00", "2024-07-15T01:00", "2024-07-15T02:00", "2024-07-15T03:00",
+                "2024-07-15T04:00", "2024-07-15T05:00", "2024-07-15T06:00", "2024-07-15T07:00",
+                "2024-07-15T08:00", "2024-07-15T09:00", "2024-07-15T10:00", "2024-07-15T11:00",
+                "2024-07-15T12:00", "2024-07-15T13:00", "2024-07-15T14:00", "2024-07-15T15:00",
+                "2024-07-15T16:00", "2024-07-15T17:00", "2024-07-15T18:00", "2024-07-15T19:00",
+                "2024-07-15T20:00", "2024-07-15T21:00", "2024-07-15T22:00", "2024-07-15T23:00",
+                "2024-07-16T00:00", "2024-07-16T01:00", "2024-07-16T02:00", "2024-07-16T03:00"
+            ],
+            "temperature_2m": [
+                15.2, 14.8, 14.5, 14.2, 14.0, 14.5, 16.0, 18.5,
+                20.0, 21.5, 22.5, 23.5, 24.0, 24.5, 24.8, 24.5,
+                24.0, 23.0, 21.5, 20.0, 18.5, 17.5, 16.5, 15.8,
+                15.5, 15.2, 14.8, 14.5
+            ],
+            "apparent_temperature": [
+                14.0, 13.5, 13.2, 12.9, 12.7, 13.2, 15.0, 17.5,
+                19.0, 20.5, 21.5, 22.5, 23.0, 23.5, 23.8, 23.5,
+                23.0, 22.0, 20.5, 19.0, 17.5, 16.5, 15.5, 14.8,
+                14.5, 14.2, 13.8, 13.5
+            ],
+            "weathercode": [
+                0, 0, 0, 0, 0, 1, 1, 1,
+                2, 2, 2, 3, 3, 2, 2, 2,
+                1, 1, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0
+            ],
+            "windspeed_10m": [
+                5.2, 4.8, 4.5, 4.2, 4.0, 5.5, 7.0, 9.5,
+                11.0, 12.5, 13.5, 14.5, 15.0, 15.5, 15.8, 15.5,
+                15.0, 14.0, 12.5, 11.0, 9.5, 8.5, 7.5, 6.8,
+                6.5, 6.2, 5.8, 5.5
+            ],
+            "winddirection_10m": [
+                0, 22.5, 45, 90, 135, 180, 225, 270,
+                315, 337.5, 0, 45, 90, 135, 180, 225,
+                270, 315, 0, 45, 90, 135, 180, 225,
+                270, 315, 0, 45
+            ],
+            "uv_index": [
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.5, 3.0,
+                4.5, 6.0, 7.0, 7.5, 7.8, 7.5, 7.0, 6.0,
+                4.5, 3.0, 1.5, 0.5, 0.0, 0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0, 0.0
+            ],
+            "precipitation_probability": [
+                0, 0, 0, 5, 10, 15, 20, 25,
+                30, 25, 20, 15, 10, 5, 0, 0,
+                5, 10, 15, 10, 5, 0, 0, 0,
+                0, 0, 0, 5
+            ]
+        }
+    }"#;
+
+    #[test]
+    fn test_parse_response_full_with_hourly() {
+        let response: OpenMeteoResponseFull =
+            serde_json::from_str(VALID_RESPONSE_FULL).expect("Failed to parse valid response full");
+
+        let client = WeatherClient::new();
+        let weather = client
+            .parse_response_full(response)
+            .expect("Failed to parse weather with full hourly");
+
+        // Verify current weather
+        assert!((weather.temperature - 22.5).abs() < 0.01);
+        assert!((weather.feels_like - 23.8).abs() < 0.01);
+        assert_eq!(weather.condition, WeatherCondition::PartlyCloudy);
+        assert_eq!(weather.humidity, 65);
+        assert!((weather.wind - 12.5).abs() < 0.01);
+        assert!((weather.uv - 7.5).abs() < 0.01);
+
+        // Verify hourly array - should only contain today's hours (24 hours)
+        assert_eq!(weather.hourly.len(), 24);
+    }
+
+    #[test]
+    fn test_hourly_forecasts_filtered_to_today() {
+        let response: OpenMeteoResponseFull =
+            serde_json::from_str(VALID_RESPONSE_FULL).expect("Failed to parse valid response full");
+
+        let client = WeatherClient::new();
+        let weather = client
+            .parse_response_full(response)
+            .expect("Failed to parse weather with full hourly");
+
+        // All hours should be from 0-23
+        for forecast in &weather.hourly {
+            assert!(forecast.hour < 24, "Hour {} should be less than 24", forecast.hour);
+        }
+
+        // Verify hours are sequential from 0 to 23
+        for (i, forecast) in weather.hourly.iter().enumerate() {
+            assert_eq!(
+                forecast.hour as usize,
+                i,
+                "Hour at index {} should be {}, got {}",
+                i,
+                i,
+                forecast.hour
+            );
+        }
+    }
+
+    #[test]
+    fn test_hourly_forecast_fields_populated() {
+        let response: OpenMeteoResponseFull =
+            serde_json::from_str(VALID_RESPONSE_FULL).expect("Failed to parse valid response full");
+
+        let client = WeatherClient::new();
+        let weather = client
+            .parse_response_full(response)
+            .expect("Failed to parse weather with full hourly");
+
+        // Check first hour (midnight)
+        let first_hour = &weather.hourly[0];
+        assert_eq!(first_hour.hour, 0);
+        assert!((first_hour.temperature - 15.2).abs() < 0.01);
+        assert!((first_hour.feels_like - 14.0).abs() < 0.01);
+        assert_eq!(first_hour.condition, WeatherCondition::Clear);
+        assert!((first_hour.wind - 5.2).abs() < 0.01);
+        assert_eq!(first_hour.wind_direction, "N");
+        assert!((first_hour.uv - 0.0).abs() < 0.01);
+        assert_eq!(first_hour.precipitation_chance, 0);
+
+        // Check mid-day hour (index 14 = 2pm)
+        let midday = &weather.hourly[14];
+        assert_eq!(midday.hour, 14);
+        assert!((midday.temperature - 24.8).abs() < 0.01);
+        assert!((midday.feels_like - 23.8).abs() < 0.01);
+        assert_eq!(midday.condition, WeatherCondition::PartlyCloudy);
+        assert!((midday.wind - 15.8).abs() < 0.01);
+        assert_eq!(midday.wind_direction, "S");
+        assert!((midday.uv - 7.0).abs() < 0.01);
+        assert_eq!(midday.precipitation_chance, 0);
+    }
+
+    #[test]
+    fn test_parse_response_full_without_hourly() {
+        // Response without hourly data should still parse and have empty hourly vec
+        let response_no_hourly = r#"{
+            "current": {
+                "temperature_2m": 22.5,
+                "relative_humidity_2m": 65,
+                "apparent_temperature": 23.8,
+                "weather_code": 2,
+                "wind_speed_10m": 12.5,
+                "wind_direction_10m": 270
+            },
+            "daily": {
+                "time": ["2024-07-15"],
+                "sunrise": ["2024-07-15T05:30"],
+                "sunset": ["2024-07-15T21:15"],
+                "uv_index_max": [7.5]
+            }
+        }"#;
+
+        let response: OpenMeteoResponseFull =
+            serde_json::from_str(response_no_hourly).expect("Failed to parse response without hourly");
+
+        let client = WeatherClient::new();
+        let weather = client
+            .parse_response_full(response)
+            .expect("Failed to parse weather without hourly");
+
+        // Should have empty hourly vec
+        assert!(weather.hourly.is_empty());
+
+        // Current weather should still be valid
+        assert!((weather.temperature - 22.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_degrees_to_direction() {
+        // Test cardinal directions
+        assert_eq!(degrees_to_direction(0.0), "N");
+        assert_eq!(degrees_to_direction(90.0), "E");
+        assert_eq!(degrees_to_direction(180.0), "S");
+        assert_eq!(degrees_to_direction(270.0), "W");
+
+        // Test intercardinal directions
+        assert_eq!(degrees_to_direction(45.0), "NE");
+        assert_eq!(degrees_to_direction(135.0), "SE");
+        assert_eq!(degrees_to_direction(225.0), "SW");
+        assert_eq!(degrees_to_direction(315.0), "NW");
+
+        // Test 16-point compass directions
+        assert_eq!(degrees_to_direction(22.5), "NNE");
+        assert_eq!(degrees_to_direction(67.5), "ENE");
+        assert_eq!(degrees_to_direction(112.5), "ESE");
+        assert_eq!(degrees_to_direction(157.5), "SSE");
+        assert_eq!(degrees_to_direction(202.5), "SSW");
+        assert_eq!(degrees_to_direction(247.5), "WSW");
+        assert_eq!(degrees_to_direction(292.5), "WNW");
+        assert_eq!(degrees_to_direction(337.5), "NNW");
+
+        // Test values near boundaries
+        assert_eq!(degrees_to_direction(11.0), "N"); // Just under NNE boundary
+        assert_eq!(degrees_to_direction(12.0), "NNE"); // Just over N boundary
+
+        // Test wrap-around
+        assert_eq!(degrees_to_direction(360.0), "N");
+        assert_eq!(degrees_to_direction(361.0), "N");
+        assert_eq!(degrees_to_direction(-10.0), "N");
+        assert_eq!(degrees_to_direction(-90.0), "W");
+    }
+
+    #[test]
+    fn test_hourly_with_missing_optional_fields() {
+        // Response with minimal hourly data (missing apparent_temperature, winddirection, precipitation_probability)
+        let response_minimal_hourly = r#"{
+            "current": {
+                "temperature_2m": 22.5,
+                "relative_humidity_2m": 65,
+                "apparent_temperature": 23.8,
+                "weather_code": 2,
+                "wind_speed_10m": 12.5,
+                "wind_direction_10m": 270
+            },
+            "daily": {
+                "time": ["2024-07-15"],
+                "sunrise": ["2024-07-15T05:30"],
+                "sunset": ["2024-07-15T21:15"],
+                "uv_index_max": [7.5]
+            },
+            "hourly": {
+                "time": ["2024-07-15T12:00", "2024-07-15T13:00"],
+                "temperature_2m": [22.0, 23.0],
+                "weathercode": [2, 2],
+                "windspeed_10m": [10.0, 11.0],
+                "uv_index": [6.0, 6.5]
+            }
+        }"#;
+
+        let response: OpenMeteoResponseFull =
+            serde_json::from_str(response_minimal_hourly).expect("Failed to parse minimal hourly response");
+
+        let client = WeatherClient::new();
+        let weather = client
+            .parse_response_full(response)
+            .expect("Failed to parse weather with minimal hourly");
+
+        // Should have 2 hourly forecasts
+        assert_eq!(weather.hourly.len(), 2);
+
+        // Check defaults are applied
+        let forecast = &weather.hourly[0];
+        assert_eq!(forecast.hour, 12);
+        assert!((forecast.temperature - 22.0).abs() < 0.01);
+        // feels_like should default to temperature when apparent_temperature is missing
+        assert!((forecast.feels_like - 22.0).abs() < 0.01);
+        // wind_direction should default to "N" (0 degrees)
+        assert_eq!(forecast.wind_direction, "N");
+        // precipitation_chance should default to 0
+        assert_eq!(forecast.precipitation_chance, 0);
+    }
+
+    #[test]
+    fn test_cache_includes_hourly_data_serialization() {
+        // Create a Weather object with hourly data and verify it serializes/deserializes correctly
+        // This ensures cache compatibility
+        let hourly = vec![
+            HourlyForecast {
+                hour: 10,
+                temperature: 20.0,
+                feels_like: 19.0,
+                condition: WeatherCondition::Clear,
+                wind: 10.0,
+                wind_direction: "NW".to_string(),
+                uv: 5.0,
+                precipitation_chance: 10,
+            },
+            HourlyForecast {
+                hour: 11,
+                temperature: 21.0,
+                feels_like: 20.0,
+                condition: WeatherCondition::PartlyCloudy,
+                wind: 12.0,
+                wind_direction: "W".to_string(),
+                uv: 6.0,
+                precipitation_chance: 15,
+            },
+        ];
+
+        let weather = Weather {
+            temperature: 20.0,
+            feels_like: 19.0,
+            condition: WeatherCondition::Clear,
+            humidity: 60,
+            wind: 10.0,
+            uv: 5.0,
+            sunrise: NaiveTime::from_hms_opt(6, 0, 0).unwrap(),
+            sunset: NaiveTime::from_hms_opt(20, 30, 0).unwrap(),
+            fetched_at: Utc::now(),
+            hourly,
+        };
+
+        // Serialize to JSON (simulating cache write)
+        let json = serde_json::to_string(&weather).expect("Failed to serialize Weather with hourly");
+
+        // Deserialize back (simulating cache read)
+        let deserialized: Weather =
+            serde_json::from_str(&json).expect("Failed to deserialize Weather with hourly");
+
+        // Verify hourly data is preserved
+        assert_eq!(deserialized.hourly.len(), 2);
+        assert_eq!(deserialized.hourly[0].hour, 10);
+        assert_eq!(deserialized.hourly[0].wind_direction, "NW");
+        assert_eq!(deserialized.hourly[0].precipitation_chance, 10);
+        assert_eq!(deserialized.hourly[1].hour, 11);
+        assert_eq!(deserialized.hourly[1].wind_direction, "W");
+        assert_eq!(deserialized.hourly[1].precipitation_chance, 15);
     }
 }
