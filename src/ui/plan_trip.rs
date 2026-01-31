@@ -199,7 +199,9 @@ fn truncate_name(name: &str, max_len: usize) -> String {
     if name.len() <= max_len {
         format!("{:<width$}", name, width = max_len)
     } else {
-        format!("{:.width$}", name, width = max_len - 1)
+        // Truncate to max_len - 1 and pad to ensure fixed width
+        let truncated: String = name.chars().take(max_len - 1).collect();
+        format!("{:<width$}", truncated, width = max_len)
     }
 }
 

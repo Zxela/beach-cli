@@ -293,7 +293,10 @@ impl WeatherClient {
 
     /// Parse the Open-Meteo API response with full hourly data into a Weather struct
     /// This populates the Weather.hourly field with today's hourly forecasts
-    fn parse_response_full(&self, response: OpenMeteoResponseFull) -> Result<Weather, WeatherError> {
+    fn parse_response_full(
+        &self,
+        response: OpenMeteoResponseFull,
+    ) -> Result<Weather, WeatherError> {
         let current = response.current;
         let daily = response.daily;
 
@@ -394,11 +397,7 @@ impl WeatherClient {
                 .unwrap_or(hourly.temperature_2m[i]);
 
             // Get wind direction, defaulting to 0 (N) if not available
-            let wind_direction_degrees = hourly
-                .winddirection_10m
-                .get(i)
-                .copied()
-                .unwrap_or(0.0);
+            let wind_direction_degrees = hourly.winddirection_10m.get(i).copied().unwrap_or(0.0);
 
             // Get precipitation probability, defaulting to 0 if not available
             let precipitation_chance = hourly
@@ -430,8 +429,8 @@ fn degrees_to_direction(degrees: f64) -> String {
 
     // Map to 16 compass points
     let directions = [
-        "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-        "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+        "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW",
+        "NW", "NNW",
     ];
 
     // Each direction covers 22.5 degrees, offset by 11.25 to center
@@ -1236,18 +1235,19 @@ mod tests {
 
         // All hours should be from 0-23
         for forecast in &weather.hourly {
-            assert!(forecast.hour < 24, "Hour {} should be less than 24", forecast.hour);
+            assert!(
+                forecast.hour < 24,
+                "Hour {} should be less than 24",
+                forecast.hour
+            );
         }
 
         // Verify hours are sequential from 0 to 23
         for (i, forecast) in weather.hourly.iter().enumerate() {
             assert_eq!(
-                forecast.hour as usize,
-                i,
+                forecast.hour as usize, i,
                 "Hour at index {} should be {}, got {}",
-                i,
-                i,
-                forecast.hour
+                i, i, forecast.hour
             );
         }
     }
@@ -1305,8 +1305,8 @@ mod tests {
             }
         }"#;
 
-        let response: OpenMeteoResponseFull =
-            serde_json::from_str(response_no_hourly).expect("Failed to parse response without hourly");
+        let response: OpenMeteoResponseFull = serde_json::from_str(response_no_hourly)
+            .expect("Failed to parse response without hourly");
 
         let client = WeatherClient::new();
         let weather = client
@@ -1382,8 +1382,8 @@ mod tests {
             }
         }"#;
 
-        let response: OpenMeteoResponseFull =
-            serde_json::from_str(response_minimal_hourly).expect("Failed to parse minimal hourly response");
+        let response: OpenMeteoResponseFull = serde_json::from_str(response_minimal_hourly)
+            .expect("Failed to parse minimal hourly response");
 
         let client = WeatherClient::new();
         let weather = client
@@ -1446,7 +1446,8 @@ mod tests {
         };
 
         // Serialize to JSON (simulating cache write)
-        let json = serde_json::to_string(&weather).expect("Failed to serialize Weather with hourly");
+        let json =
+            serde_json::to_string(&weather).expect("Failed to serialize Weather with hourly");
 
         // Deserialize back (simulating cache read)
         let deserialized: Weather =

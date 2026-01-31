@@ -649,7 +649,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 mod tests {
     use super::*;
     use crate::app::{App, AppState};
-    use crate::data::{BeachConditions, WaterQuality, WaterStatus, Weather, WeatherCondition};
+    use crate::data::{WaterQuality, WaterStatus, Weather, WeatherCondition};
     use chrono::{NaiveDate, NaiveTime, Utc};
     use ratatui::{backend::TestBackend, Terminal};
 
@@ -661,6 +661,7 @@ mod tests {
     }
 
     /// Helper to create mock weather data
+    #[allow(dead_code)]
     fn create_mock_weather(temp: f64, condition: WeatherCondition) -> Weather {
         Weather {
             temperature: temp,
@@ -677,6 +678,7 @@ mod tests {
     }
 
     /// Helper to create mock water quality data
+    #[allow(dead_code)]
     fn create_mock_water_quality(status: WaterStatus) -> WaterQuality {
         WaterQuality {
             status,
@@ -758,7 +760,7 @@ mod tests {
     #[test]
     fn test_all_beaches_are_rendered() {
         let app = create_test_app();
-        let beaches = all_beaches();
+        let _beaches = all_beaches();
 
         let backend = TestBackend::new(80, 30); // Taller to fit all beaches
         let mut terminal = Terminal::new(backend).unwrap();

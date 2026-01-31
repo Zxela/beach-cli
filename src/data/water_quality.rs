@@ -87,6 +87,7 @@ impl WaterQualityClient {
 
     /// Creates a new WaterQualityClient with a custom base URL (for testing)
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn with_base_url(base_url: String) -> Self {
         Self {
             http_client: Client::new(),
@@ -445,7 +446,7 @@ mod tests {
     #[test]
     fn test_cache_integration_write_and_read() {
         let (cache, _temp_dir) = create_test_cache();
-        let client = WaterQualityClient::with_cache(cache.clone());
+        let _client = WaterQualityClient::with_cache(cache.clone());
 
         let water_quality = WaterQuality {
             status: WaterStatus::Safe,

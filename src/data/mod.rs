@@ -657,7 +657,8 @@ mod tests {
         };
 
         // Serialize to JSON
-        let json = serde_json::to_string(&weather).expect("Failed to serialize Weather with hourly");
+        let json =
+            serde_json::to_string(&weather).expect("Failed to serialize Weather with hourly");
 
         // Deserialize back
         let deserialized: Weather =

@@ -121,9 +121,9 @@ pub fn render(frame: &mut Frame, app: &mut App, beach_id: &str) {
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),                      // Activity selector (fixed)
-            Constraint::Min(0),                         // Content area (scrollable)
-            Constraint::Length(2),                      // Help text (fixed)
+            Constraint::Length(1), // Activity selector (fixed)
+            Constraint::Min(0),    // Content area (scrollable)
+            Constraint::Length(2), // Help text (fixed)
         ])
         .split(inner_area);
 
@@ -167,6 +167,7 @@ pub fn render(frame: &mut Frame, app: &mut App, beach_id: &str) {
 }
 
 /// Renders the scrollable content sections with scroll offset applied
+#[allow(clippy::too_many_arguments)]
 fn render_scrollable_content(
     frame: &mut Frame,
     area: Rect,
@@ -213,13 +214,9 @@ fn render_scrollable_content(
     }
 
     // Tides section
-    if let Some(visible_rect) = calculate_visible_rect(
-        tides_start,
-        tides_height,
-        visible_start,
-        visible_end,
-        area,
-    ) {
+    if let Some(visible_rect) =
+        calculate_visible_rect(tides_start, tides_height, visible_start, visible_end, area)
+    {
         let section_offset = scroll_offset.saturating_sub(tides_start);
         render_tides_section_with_offset(
             frame,
@@ -274,7 +271,13 @@ fn render_scrollable_content(
             area,
         ) {
             let section_offset = scroll_offset.saturating_sub(best_window_start);
-            render_best_window_section_with_offset(frame, visible_rect, app, beach_id, section_offset);
+            render_best_window_section_with_offset(
+                frame,
+                visible_rect,
+                app,
+                beach_id,
+                section_offset,
+            );
         }
     }
 }
@@ -319,10 +322,7 @@ fn render_scroll_indicator_top(frame: &mut Frame, area: Rect) {
     if area.width < 10 {
         return;
     }
-    let indicator = Span::styled(
-        "\u{25B2} more",
-        Style::default().fg(colors::SECONDARY),
-    );
+    let indicator = Span::styled("\u{25B2} more", Style::default().fg(colors::SECONDARY));
     let x = area.x + area.width.saturating_sub(8);
     let indicator_area = Rect {
         x,
@@ -339,10 +339,7 @@ fn render_scroll_indicator_bottom(frame: &mut Frame, area: Rect) {
     if area.width < 10 || area.height == 0 {
         return;
     }
-    let indicator = Span::styled(
-        "\u{25BC} more",
-        Style::default().fg(colors::SECONDARY),
-    );
+    let indicator = Span::styled("\u{25BC} more", Style::default().fg(colors::SECONDARY));
     let x = area.x + area.width.saturating_sub(8);
     let indicator_area = Rect {
         x,
@@ -468,18 +465,12 @@ fn build_hourly_line(forecast: &HourlyForecast) -> Line<'static> {
             format!("{:<6}", temp_str),
             Style::default().fg(temperature_color(forecast.temperature)),
         ),
-        Span::styled(
-            format!("{:<3}", icon),
-            Style::default().fg(colors::PRIMARY),
-        ),
+        Span::styled(format!("{:<3}", icon), Style::default().fg(colors::PRIMARY)),
         Span::styled(
             format!("{:<14}", wind_str),
             Style::default().fg(colors::SECONDARY),
         ),
-        Span::styled(
-            uv_str,
-            Style::default().fg(uv_index_color(forecast.uv)),
-        ),
+        Span::styled(uv_str, Style::default().fg(uv_index_color(forecast.uv))),
     ])
 }
 
@@ -617,7 +608,10 @@ fn build_tides_lines(tides: Option<&crate::data::TideInfo>) -> Vec<Line<'static>
 }
 
 /// Builds the lines for the tides section with configurable width
-fn build_tides_lines_with_width(tides: Option<&crate::data::TideInfo>, width: usize) -> Vec<Line<'static>> {
+fn build_tides_lines_with_width(
+    tides: Option<&crate::data::TideInfo>,
+    width: usize,
+) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(Span::styled(
         "TIDES",
         Style::default()
@@ -691,7 +685,10 @@ fn build_tides_lines_with_width(tides: Option<&crate::data::TideInfo>, width: us
             // Next high/low times and expand hint on same line
             let mut next_events: Vec<Span> = Vec::new();
             if let Some(ref high) = t.next_high {
-                next_events.push(Span::styled("H:".to_string(), Style::default().fg(colors::SECONDARY)));
+                next_events.push(Span::styled(
+                    "H:".to_string(),
+                    Style::default().fg(colors::SECONDARY),
+                ));
                 next_events.push(Span::styled(
                     high.time.format("%H:%M").to_string(),
                     Style::default().fg(colors::PRIMARY),
@@ -699,7 +696,10 @@ fn build_tides_lines_with_width(tides: Option<&crate::data::TideInfo>, width: us
                 next_events.push(Span::raw(" "));
             }
             if let Some(ref low) = t.next_low {
-                next_events.push(Span::styled("L:".to_string(), Style::default().fg(colors::SECONDARY)));
+                next_events.push(Span::styled(
+                    "L:".to_string(),
+                    Style::default().fg(colors::SECONDARY),
+                ));
                 next_events.push(Span::styled(
                     low.time.format("%H:%M").to_string(),
                     Style::default().fg(colors::PRIMARY),
@@ -726,9 +726,12 @@ fn build_tides_lines_with_width(tides: Option<&crate::data::TideInfo>, width: us
     lines
 }
 
-/// Builds the expanded ASCII tide chart with Y-axis labels, tide curve, and X-axis time markers.
-/// The chart is approximately 12 lines tall and uses box-drawing characters for the curve.
-fn build_expanded_tide_chart(tides: Option<&crate::data::TideInfo>, width: usize) -> Vec<Line<'static>> {
+/// Builds the expanded tide chart with Y-axis labels, tide curve using braille dots, and X-axis time markers.
+/// The chart uses Unicode braille characters (2x4 dot matrix) for smooth, high-fidelity curves.
+fn build_expanded_tide_chart(
+    tides: Option<&crate::data::TideInfo>,
+    width: usize,
+) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(Span::styled(
         "TIDES",
         Style::default()
@@ -763,84 +766,106 @@ fn build_expanded_tide_chart(tides: Option<&crate::data::TideInfo>, width: usize
             let y_axis_width: usize = 4;
             let chart_width = width.saturating_sub(y_axis_width).max(20);
 
-            // Heights for the chart: 9 rows (0m to 4m with intermediate rows)
-            // Row 0 = 4m, Row 8 = 0m
-            const CHART_ROWS: usize = 9;
+            // Chart rows: 8 character rows, each representing 4 braille dots = 32 vertical positions
+            const CHART_ROWS: usize = 8;
+            const BRAILLE_DOTS_PER_ROW: usize = 4;
+            const TOTAL_VERTICAL_DOTS: usize = CHART_ROWS * BRAILLE_DOTS_PER_ROW; // 32
             const MAX_HEIGHT: f64 = 4.0;
 
             // Get tide heights and interpolate to fill chart width
+            // We need 2x the character width because each braille char is 2 dots wide
             let base_heights = t.hourly_heights(MAX_HEIGHT);
-            let interpolated_heights = interpolate_heights(&base_heights, chart_width);
+            let data_points = chart_width * 2; // 2 horizontal dots per character
+            let interpolated_heights = interpolate_heights(&base_heights, data_points);
 
-            // Determine current hour position
+            // Determine current position for marker
             let current_hour = Local::now().hour() as usize;
-            let current_col_index = if (6..=21).contains(&current_hour) {
+            let current_data_index = if (6..=21).contains(&current_hour) {
                 let hour_offset = current_hour - 6;
-                Some((hour_offset * chart_width) / 16)
+                Some((hour_offset * data_points) / 16)
             } else {
                 None
             };
 
-            // Current height in row coordinates (0 = 4m, 8 = 0m)
-            let current_height_row = if current_col_index.is_some() {
-                let h = t.current_height.clamp(0.0, MAX_HEIGHT);
-                let normalized = h / MAX_HEIGHT;
-                let row = ((1.0 - normalized) * (CHART_ROWS - 1) as f64).round() as usize;
-                Some(row.min(CHART_ROWS - 1))
-            } else {
-                None
-            };
+            // Build the braille canvas
+            // Each cell is a 2x4 dot matrix, so we need chart_width characters horizontally
+            // and CHART_ROWS characters vertically
+            let mut braille_grid: Vec<Vec<u8>> = vec![vec![0u8; chart_width]; CHART_ROWS];
+
+            // Plot the tide curve as braille dots
+            for (data_idx, &height) in interpolated_heights.iter().enumerate() {
+                // Map height (0.0-4.0) to vertical dot position (31-0, top is high)
+                let normalized = height.clamp(0.0, MAX_HEIGHT) / MAX_HEIGHT;
+                let dot_row =
+                    ((1.0 - normalized) * (TOTAL_VERTICAL_DOTS - 1) as f64).round() as usize;
+                let dot_row = dot_row.min(TOTAL_VERTICAL_DOTS - 1);
+
+                // Which character row and which dot within that row?
+                let char_row = dot_row / BRAILLE_DOTS_PER_ROW;
+                let dot_in_char = dot_row % BRAILLE_DOTS_PER_ROW;
+
+                // Which character column and which dot (left=0, right=1)?
+                let char_col = data_idx / 2;
+                let dot_side = data_idx % 2; // 0 = left column, 1 = right column
+
+                if char_col < chart_width && char_row < CHART_ROWS {
+                    // Set the appropriate braille dot
+                    let dot_bit = braille_dot_bit(dot_in_char, dot_side);
+                    braille_grid[char_row][char_col] |= dot_bit;
+                }
+            }
+
+            // Y-axis labels for 8 rows (4m at top, 0m at bottom)
+            let y_labels = ["4m", "  ", "3m", "  ", "2m", "  ", "1m", "0m"];
 
             // Build the chart row by row
-            // Y-axis labels: 4m, 3m, 2m, 1m, 0m (with intermediate rows unlabeled)
-            let y_labels = ["4m", "  ", "3m", "  ", "2m", "  ", "1m", "  ", "0m"];
-
+            #[allow(clippy::needless_range_loop)]
             for row in 0..CHART_ROWS {
-                let height_threshold_high = MAX_HEIGHT - (row as f64 * MAX_HEIGHT / (CHART_ROWS - 1) as f64);
-                let height_threshold_low = MAX_HEIGHT - ((row + 1) as f64 * MAX_HEIGHT / (CHART_ROWS - 1) as f64);
-
-                // Build the row
                 let y_label = y_labels.get(row).unwrap_or(&"  ");
-                let y_axis_char = if row == CHART_ROWS - 1 { "\u{253C}" } else { "\u{2524}" }; // ┼ for bottom, ┤ for others
+                let y_axis_char = if row == CHART_ROWS - 1 {
+                    "\u{253C}"
+                } else {
+                    "\u{2524}"
+                }; // ┼ for bottom, ┤ for others
 
-                let mut row_spans: Vec<Span> = vec![
-                    Span::styled(
-                        format!("{} {}", y_label, y_axis_char),
-                        Style::default().fg(colors::SECONDARY),
-                    ),
-                ];
+                let mut row_spans: Vec<Span> = vec![Span::styled(
+                    format!("{} {}", y_label, y_axis_char),
+                    Style::default().fg(colors::SECONDARY),
+                )];
 
-                // Draw the chart content for this row
-                let mut chart_chars: Vec<char> = Vec::with_capacity(chart_width);
-                for col in 0..chart_width {
-                    let height = interpolated_heights.get(col).copied().unwrap_or(0.0);
-                    let prev_height = if col > 0 { interpolated_heights.get(col - 1).copied().unwrap_or(0.0) } else { height };
-                    let next_height = interpolated_heights.get(col + 1).copied().unwrap_or(height);
-
-                    // Determine what character to draw based on the tide curve
-                    let char_to_draw = get_chart_character(
-                        row, col, height, prev_height, next_height,
-                        height_threshold_high, height_threshold_low,
-                        CHART_ROWS, MAX_HEIGHT
-                    );
-                    chart_chars.push(char_to_draw);
+                // Convert braille bits to characters
+                let mut chart_str = String::with_capacity(chart_width);
+                for &bits in braille_grid[row].iter().take(chart_width) {
+                    let braille_char = braille_char_from_bits(bits);
+                    chart_str.push(braille_char);
                 }
 
-                // Convert to string and highlight current position
-                let chart_str: String = chart_chars.iter().collect();
+                // Check if we should insert a current position marker
+                if let Some(data_idx) = current_data_index {
+                    let marker_char_col = data_idx / 2;
+                    let height = interpolated_heights.get(data_idx).copied().unwrap_or(0.0);
+                    let normalized = height.clamp(0.0, MAX_HEIGHT) / MAX_HEIGHT;
+                    let dot_row =
+                        ((1.0 - normalized) * (TOTAL_VERTICAL_DOTS - 1) as f64).round() as usize;
+                    let marker_char_row = dot_row / BRAILLE_DOTS_PER_ROW;
 
-                // Check if current position marker should be on this row
-                if let (Some(col_idx), Some(height_row)) = (current_col_index, current_height_row) {
-                    if row == height_row && col_idx < chart_width {
-                        // Split string and insert marker
-                        let before: String = chart_chars.iter().take(col_idx).collect();
-                        let after: String = chart_chars.iter().skip(col_idx + 1).collect();
+                    if row == marker_char_row && marker_char_col < chart_width {
+                        // Split and insert marker
+                        let chars: Vec<char> = chart_str.chars().collect();
+                        let before: String = chars.iter().take(marker_char_col).collect();
+                        let after: String = chars.iter().skip(marker_char_col + 1).collect();
 
                         row_spans.push(Span::styled(before, Style::default().fg(colors::RISING)));
-                        row_spans.push(Span::styled("\u{25CF}".to_string(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))); // ●
+                        row_spans.push(Span::styled(
+                            "\u{25CF}".to_string(), // ●
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ));
                         row_spans.push(Span::styled(after, Style::default().fg(colors::RISING)));
                     } else {
-                        row_spans.push(Span::styled(chart_str, Style::default().fg(colors::RISING)));
+                        row_spans
+                            .push(Span::styled(chart_str, Style::default().fg(colors::RISING)));
                     }
                 } else {
                     row_spans.push(Span::styled(chart_str, Style::default().fg(colors::RISING)));
@@ -869,7 +894,10 @@ fn build_expanded_tide_chart(tides: Option<&crate::data::TideInfo>, width: usize
             // Next high/low times and collapse hint
             let mut next_events: Vec<Span> = Vec::new();
             if let Some(ref high) = t.next_high {
-                next_events.push(Span::styled("H:".to_string(), Style::default().fg(colors::SECONDARY)));
+                next_events.push(Span::styled(
+                    "H:".to_string(),
+                    Style::default().fg(colors::SECONDARY),
+                ));
                 next_events.push(Span::styled(
                     high.time.format("%H:%M").to_string(),
                     Style::default().fg(colors::PRIMARY),
@@ -877,7 +905,10 @@ fn build_expanded_tide_chart(tides: Option<&crate::data::TideInfo>, width: usize
                 next_events.push(Span::raw(" "));
             }
             if let Some(ref low) = t.next_low {
-                next_events.push(Span::styled("L:".to_string(), Style::default().fg(colors::SECONDARY)));
+                next_events.push(Span::styled(
+                    "L:".to_string(),
+                    Style::default().fg(colors::SECONDARY),
+                ));
                 next_events.push(Span::styled(
                     low.time.format("%H:%M").to_string(),
                     Style::default().fg(colors::PRIMARY),
@@ -904,100 +935,43 @@ fn build_expanded_tide_chart(tides: Option<&crate::data::TideInfo>, width: usize
     lines
 }
 
-/// Determines the character to draw at a given position in the expanded tide chart.
-fn get_chart_character(
-    row: usize,
-    col: usize,
-    height: f64,
-    prev_height: f64,
-    next_height: f64,
-    _height_threshold_high: f64,
-    _height_threshold_low: f64,
-    chart_rows: usize,
-    max_height: f64,
-) -> char {
-    // Convert heights to row coordinates
-    let height_to_row = |h: f64| -> usize {
-        let normalized = h.clamp(0.0, max_height) / max_height;
-        let r = ((1.0 - normalized) * (chart_rows - 1) as f64).round() as usize;
-        r.min(chart_rows - 1)
-    };
-
-    let current_row = height_to_row(height);
-    let prev_row = height_to_row(prev_height);
-    let next_row = height_to_row(next_height);
-
-    // Check if the curve passes through this cell
-    if current_row == row {
-        // The curve is at this height
-        if col == 0 {
-            // First column
-            if next_row < row {
-                '\u{256D}' // ╭ - going up
-            } else if next_row > row {
-                '\u{2570}' // ╰ - going down
-            } else {
-                '\u{2500}' // ─ - horizontal
-            }
-        } else if prev_row < row && next_row < row {
-            // Coming from above and going up - this is a valley
-            '\u{2570}' // ╰
-        } else if prev_row > row && next_row > row {
-            // Coming from below and going down - this is a peak
-            '\u{256D}' // ╭
-        } else if prev_row > row {
-            // Coming from below
-            if next_row < row {
-                '\u{256D}' // ╭ - peak
-            } else if next_row > row {
-                '\u{256E}' // ╮ - going down
-            } else {
-                '\u{256F}' // ╯ - ending climb
-            }
-        } else if prev_row < row {
-            // Coming from above
-            if next_row > row {
-                '\u{2570}' // ╰ - valley
-            } else if next_row < row {
-                '\u{256D}' // ╭ - going up
-            } else {
-                '\u{256D}' // ╭ - starting descent
-            }
-        } else {
-            // prev_row == row
-            if next_row < row {
-                '\u{256D}' // ╭ - starting to go up
-            } else if next_row > row {
-                '\u{256E}' // ╮ - starting to go down
-            } else {
-                '\u{2500}' // ─ - horizontal
-            }
-        }
-    } else if (current_row < row && prev_row >= row) || (prev_row < row && current_row >= row) {
-        // Vertical segment passes through this row (transition between prev and current)
-        if prev_row < current_row {
-            // Going down
-            if row == prev_row + 1 {
-                '\u{256E}' // ╮
-            } else if row == current_row {
-                '\u{2570}' // ╰
-            } else {
-                '\u{2502}' // │
-            }
-        } else {
-            // Going up
-            if row == current_row + 1 {
-                '\u{256F}' // ╯
-            } else if row == prev_row {
-                '\u{256D}' // ╭
-            } else {
-                '\u{2502}' // │
-            }
-        }
-    } else {
-        // No curve at this position
-        ' '
+/// Returns the bit mask for a braille dot at the given position.
+/// Braille dots are arranged in a 2x4 grid:
+/// ```text
+/// 1 4
+/// 2 5
+/// 3 6
+/// 7 8
+/// ```
+/// - `dot_row`: 0-3 (top to bottom)
+/// - `dot_col`: 0 = left column, 1 = right column
+fn braille_dot_bit(dot_row: usize, dot_col: usize) -> u8 {
+    // Braille dot numbering and their bit positions:
+    // Dot 1 (row 0, col 0) = bit 0 = 0x01
+    // Dot 2 (row 1, col 0) = bit 1 = 0x02
+    // Dot 3 (row 2, col 0) = bit 2 = 0x04
+    // Dot 7 (row 3, col 0) = bit 6 = 0x40
+    // Dot 4 (row 0, col 1) = bit 3 = 0x08
+    // Dot 5 (row 1, col 1) = bit 4 = 0x10
+    // Dot 6 (row 2, col 1) = bit 5 = 0x20
+    // Dot 8 (row 3, col 1) = bit 7 = 0x80
+    match (dot_row, dot_col) {
+        (0, 0) => 0x01, // Dot 1
+        (1, 0) => 0x02, // Dot 2
+        (2, 0) => 0x04, // Dot 3
+        (3, 0) => 0x40, // Dot 7
+        (0, 1) => 0x08, // Dot 4
+        (1, 1) => 0x10, // Dot 5
+        (2, 1) => 0x20, // Dot 6
+        (3, 1) => 0x80, // Dot 8
+        _ => 0,
     }
+}
+
+/// Converts a braille dot bit pattern to the corresponding Unicode braille character.
+fn braille_char_from_bits(bits: u8) -> char {
+    // Braille patterns start at U+2800
+    char::from_u32(0x2800 + bits as u32).unwrap_or(' ')
 }
 
 /// Builds time labels for the expanded chart X-axis
@@ -1007,9 +981,21 @@ fn build_expanded_time_labels(width: usize) -> String {
     }
 
     // Time markers: 6AM, 8AM, 10AM, 12PM, 2PM, 4PM, 6PM, 8PM, 10PM
-    let labels = ["6AM", "8AM", "10AM", "12PM", "2PM", "4PM", "6PM", "8PM", "10PM"];
+    let labels = [
+        "6AM", "8AM", "10AM", "12PM", "2PM", "4PM", "6PM", "8PM", "10PM",
+    ];
     // Positions: 0, 2, 4, 6, 8, 10, 12, 14, 16 hours from 6AM (out of 16 hours total)
-    let positions: [f64; 9] = [0.0, 2.0/16.0, 4.0/16.0, 6.0/16.0, 8.0/16.0, 10.0/16.0, 12.0/16.0, 14.0/16.0, 16.0/16.0];
+    let positions: [f64; 9] = [
+        0.0,
+        2.0 / 16.0,
+        4.0 / 16.0,
+        6.0 / 16.0,
+        8.0 / 16.0,
+        10.0 / 16.0,
+        12.0 / 16.0,
+        14.0 / 16.0,
+        1.0,
+    ];
 
     let mut result = vec![' '; width];
 
@@ -1076,7 +1062,15 @@ fn build_time_labels(width: usize) -> String {
     // Time markers at hours 6, 9, 12, 15, 18, 21 (plus implicit end at 24/midnight)
     // These correspond to positions 0, 3/16, 6/16, 9/16, 12/16, 15/16 of the sparkline
     let labels = ["6AM", "9AM", "12PM", "3PM", "6PM", "9PM", "12AM"];
-    let positions: [f64; 7] = [0.0, 3.0/16.0, 6.0/16.0, 9.0/16.0, 12.0/16.0, 15.0/16.0, 1.0];
+    let positions: [f64; 7] = [
+        0.0,
+        3.0 / 16.0,
+        6.0 / 16.0,
+        9.0 / 16.0,
+        12.0 / 16.0,
+        15.0 / 16.0,
+        1.0,
+    ];
 
     let mut result = vec![' '; width];
 
@@ -1108,7 +1102,9 @@ fn build_time_labels(width: usize) -> String {
 }
 
 /// Builds the lines for the water quality section
-fn build_water_quality_lines(water_quality: Option<&crate::data::WaterQuality>) -> Vec<Line<'static>> {
+fn build_water_quality_lines(
+    water_quality: Option<&crate::data::WaterQuality>,
+) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(Span::styled(
         "WATER QUALITY",
         Style::default()
@@ -1134,7 +1130,10 @@ fn build_water_quality_lines(water_quality: Option<&crate::data::WaterQuality>) 
 
             // Test date and E. coli count
             let mut detail_spans = vec![
-                Span::styled("Last tested: ".to_string(), Style::default().fg(colors::SECONDARY)),
+                Span::styled(
+                    "Last tested: ".to_string(),
+                    Style::default().fg(colors::SECONDARY),
+                ),
                 Span::styled(
                     wq.sample_date.format("%b %d").to_string(),
                     Style::default().fg(colors::PRIMARY),
@@ -1247,7 +1246,10 @@ fn build_best_window_lines(app: &App, beach_id: &str) -> Vec<Line<'static>> {
                     format!("{:<18}", time_range),
                     Style::default().fg(colors::PRIMARY),
                 ),
-                Span::styled("Score: ".to_string(), Style::default().fg(colors::SECONDARY)),
+                Span::styled(
+                    "Score: ".to_string(),
+                    Style::default().fg(colors::SECONDARY),
+                ),
                 Span::styled(
                     format!("{}/100", window.score),
                     Style::default().fg(*color).add_modifier(Modifier::BOLD),
@@ -3001,11 +3003,17 @@ mod tests {
         // Section entirely above visible area
         let area = Rect::new(0, 0, 80, 10);
         let result = calculate_visible_rect(0, 5, 10, 20, area);
-        assert!(result.is_none(), "Section above visible area should return None");
+        assert!(
+            result.is_none(),
+            "Section above visible area should return None"
+        );
 
         // Section entirely below visible area
         let result = calculate_visible_rect(25, 5, 10, 20, area);
-        assert!(result.is_none(), "Section below visible area should return None");
+        assert!(
+            result.is_none(),
+            "Section below visible area should return None"
+        );
     }
 
     #[test]
@@ -3014,7 +3022,10 @@ mod tests {
 
         // Section that starts above visible area but extends into it
         let result = calculate_visible_rect(5, 10, 10, 20, area);
-        assert!(result.is_some(), "Partially visible section should return Some");
+        assert!(
+            result.is_some(),
+            "Partially visible section should return Some"
+        );
         let rect = result.unwrap();
         assert_eq!(rect.y, 0, "Clipped section should start at area top");
         assert!(rect.height > 0, "Should have some visible height");
@@ -3036,7 +3047,10 @@ mod tests {
         let heights = vec![1.0, 2.0, 3.0, 4.0];
         let result = interpolate_heights(&heights, 7);
         assert_eq!(result.len(), 7, "Should return target_width elements");
-        assert!((result[0] - 1.0).abs() < 0.001, "First element should match");
+        assert!(
+            (result[0] - 1.0).abs() < 0.001,
+            "First element should match"
+        );
         assert!((result[6] - 4.0).abs() < 0.001, "Last element should match");
     }
 
@@ -3078,7 +3092,9 @@ mod tests {
 
         // Find the line containing the expand hint
         let has_expand_hint = lines.iter().any(|line| {
-            line.spans.iter().any(|span| span.content.contains("[t] expand"))
+            line.spans
+                .iter()
+                .any(|span| span.content.contains("[t] expand"))
         });
         assert!(has_expand_hint, "Should contain [t] expand hint");
     }
@@ -3121,12 +3137,18 @@ mod tests {
         let time_line = lines.get(3);
         assert!(time_line.is_some(), "Time labels line should exist");
 
-        let time_content: String = time_line.unwrap().spans.iter()
+        let time_content: String = time_line
+            .unwrap()
+            .spans
+            .iter()
             .map(|s| s.content.as_ref())
             .collect();
 
         // Should contain time markers
-        assert!(time_content.contains("6AM") || time_content.contains("6"), "Should have 6AM marker");
+        assert!(
+            time_content.contains("6AM") || time_content.contains("6"),
+            "Should have 6AM marker"
+        );
     }
 
     #[test]
@@ -3135,9 +3157,14 @@ mod tests {
         assert!(!lines.is_empty(), "Should return at least header");
 
         let has_unavailable = lines.iter().any(|line| {
-            line.spans.iter().any(|span| span.content.contains("unavailable"))
+            line.spans
+                .iter()
+                .any(|span| span.content.contains("unavailable"))
         });
-        assert!(has_unavailable, "Should show unavailable message when no tides data");
+        assert!(
+            has_unavailable,
+            "Should show unavailable message when no tides data"
+        );
     }
 
     // ========================================================================
@@ -3177,7 +3204,8 @@ mod tests {
         let lines = build_expanded_tide_chart(Some(&tides), 60);
 
         // Convert all lines to string for checking
-        let all_content: String = lines.iter()
+        let all_content: String = lines
+            .iter()
             .flat_map(|line| line.spans.iter().map(|s| s.content.as_ref()))
             .collect();
 
@@ -3194,13 +3222,23 @@ mod tests {
         let lines = build_expanded_tide_chart(Some(&tides), 80);
 
         // Convert all lines to string for checking
-        let all_content: String = lines.iter()
+        let all_content: String = lines
+            .iter()
             .flat_map(|line| line.spans.iter().map(|s| s.content.as_ref()))
             .collect();
 
-        assert!(all_content.contains("6AM"), "Should contain 6AM time marker");
-        assert!(all_content.contains("12PM"), "Should contain 12PM time marker");
-        assert!(all_content.contains("6PM"), "Should contain 6PM time marker");
+        assert!(
+            all_content.contains("6AM"),
+            "Should contain 6AM time marker"
+        );
+        assert!(
+            all_content.contains("12PM"),
+            "Should contain 12PM time marker"
+        );
+        assert!(
+            all_content.contains("6PM"),
+            "Should contain 6PM time marker"
+        );
     }
 
     #[test]
@@ -3210,9 +3248,14 @@ mod tests {
 
         // Check for collapse hint
         let has_collapse_hint = lines.iter().any(|line| {
-            line.spans.iter().any(|span| span.content.contains("[t] collapse"))
+            line.spans
+                .iter()
+                .any(|span| span.content.contains("[t] collapse"))
         });
-        assert!(has_collapse_hint, "Expanded chart should contain [t] collapse hint");
+        assert!(
+            has_collapse_hint,
+            "Expanded chart should contain [t] collapse hint"
+        );
     }
 
     #[test]
@@ -3222,9 +3265,14 @@ mod tests {
 
         // Check for expand hint
         let has_expand_hint = lines.iter().any(|line| {
-            line.spans.iter().any(|span| span.content.contains("[t] expand"))
+            line.spans
+                .iter()
+                .any(|span| span.content.contains("[t] expand"))
         });
-        assert!(has_expand_hint, "Collapsed chart should contain [t] expand hint");
+        assert!(
+            has_expand_hint,
+            "Collapsed chart should contain [t] expand hint"
+        );
     }
 
     #[test]
@@ -3233,7 +3281,8 @@ mod tests {
         let lines = build_expanded_tide_chart(Some(&tides), 60);
 
         // Convert all lines to string
-        let all_content: String = lines.iter()
+        let all_content: String = lines
+            .iter()
             .flat_map(|line| line.spans.iter().map(|s| s.content.as_ref()))
             .collect();
 
@@ -3252,9 +3301,14 @@ mod tests {
         assert!(lines.len() >= 2, "Should have at least header and message");
 
         let has_unavailable = lines.iter().any(|line| {
-            line.spans.iter().any(|span| span.content.contains("unavailable"))
+            line.spans
+                .iter()
+                .any(|span| span.content.contains("unavailable"))
         });
-        assert!(has_unavailable, "Should show unavailable message when no tides data");
+        assert!(
+            has_unavailable,
+            "Should show unavailable message when no tides data"
+        );
     }
 
     #[test]
@@ -3269,7 +3323,10 @@ mod tests {
     fn test_build_expanded_time_labels_narrow_width() {
         let labels = build_expanded_time_labels(25);
         // For narrow widths, should still have some time markers
-        assert!(labels.contains("6AM"), "Should contain 6AM even in narrow width");
+        assert!(
+            labels.contains("6AM"),
+            "Should contain 6AM even in narrow width"
+        );
     }
 
     #[test]
@@ -3282,11 +3339,17 @@ mod tests {
 
         // Press 't' to expand
         app.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE));
-        assert!(app.tide_chart_expanded, "Should be expanded after 't' press");
+        assert!(
+            app.tide_chart_expanded,
+            "Should be expanded after 't' press"
+        );
 
         // Press 't' again to collapse
         app.handle_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE));
-        assert!(!app.tide_chart_expanded, "Should be collapsed after second 't' press");
+        assert!(
+            !app.tide_chart_expanded,
+            "Should be collapsed after second 't' press"
+        );
     }
 
     #[test]
@@ -3339,7 +3402,7 @@ mod tests {
     // ========================================================================
 
     /// Helper to create test weather with hourly forecasts
-    fn create_test_weather_with_hourly(current_hour: u8) -> Weather {
+    fn create_test_weather_with_hourly(_current_hour: u8) -> Weather {
         use crate::data::HourlyForecast;
 
         let mut hourly = Vec::new();
@@ -3356,7 +3419,11 @@ mod tests {
                 },
                 wind: 10.0 + (hour as f64 * 0.2),
                 wind_direction: "NW".to_string(),
-                uv: if hour < 6 || hour > 20 { 0.0 } else { (hour as f64 - 6.0).min(8.0) },
+                uv: if hour < 6 || hour > 20 {
+                    0.0
+                } else {
+                    (hour as f64 - 6.0).min(8.0)
+                },
                 precipitation_chance: 0,
             });
         }
@@ -3428,7 +3495,8 @@ mod tests {
 
         // Should have either hourly data or "no more" message
         let has_hourly_content = content.contains(":00");
-        let has_no_more_message = content.contains("No more forecasts") || content.contains("No hourly");
+        let has_no_more_message =
+            content.contains("No more forecasts") || content.contains("No hourly");
 
         assert!(
             has_hourly_content || has_no_more_message,
@@ -3447,10 +3515,7 @@ mod tests {
             "Should have at most 9 lines (1 header + 8 hours)"
         );
         // Should have at least header + some hours
-        assert!(
-            lines.len() > 1,
-            "Should have header and at least one hour"
-        );
+        assert!(lines.len() > 1, "Should have header and at least one hour");
     }
 
     #[test]
@@ -3472,7 +3537,11 @@ mod tests {
             );
 
             // Check content includes expected elements
-            let line_content: String = hour_line.spans.iter().map(|s| s.content.to_string()).collect();
+            let line_content: String = hour_line
+                .spans
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect();
 
             // Should have some time format (:00), temperature (C), and Wind/UV
             let has_time = line_content.contains(":00");
@@ -3596,8 +3665,14 @@ mod tests {
 
         // Verify all sections are present
         assert!(tides_row.is_some(), "TIDES section should be present");
-        assert!(hourly_row.is_some(), "HOURLY FORECAST section should be present");
-        assert!(water_quality_row.is_some(), "WATER QUALITY section should be present");
+        assert!(
+            hourly_row.is_some(),
+            "HOURLY FORECAST section should be present"
+        );
+        assert!(
+            water_quality_row.is_some(),
+            "WATER QUALITY section should be present"
+        );
 
         // Verify order: TIDES < HOURLY FORECAST < WATER QUALITY
         let tides_y = tides_row.unwrap();
@@ -3621,11 +3696,20 @@ mod tests {
     #[test]
     fn test_hourly_condition_icon_mapping() {
         assert_eq!(hourly_condition_icon(WeatherCondition::Clear), "\u{2600}");
-        assert_eq!(hourly_condition_icon(WeatherCondition::PartlyCloudy), "\u{26C5}");
+        assert_eq!(
+            hourly_condition_icon(WeatherCondition::PartlyCloudy),
+            "\u{26C5}"
+        );
         assert_eq!(hourly_condition_icon(WeatherCondition::Cloudy), "\u{2601}");
         assert_eq!(hourly_condition_icon(WeatherCondition::Rain), "\u{1F327}");
-        assert_eq!(hourly_condition_icon(WeatherCondition::Showers), "\u{1F326}");
-        assert_eq!(hourly_condition_icon(WeatherCondition::Thunderstorm), "\u{26C8}");
+        assert_eq!(
+            hourly_condition_icon(WeatherCondition::Showers),
+            "\u{1F326}"
+        );
+        assert_eq!(
+            hourly_condition_icon(WeatherCondition::Thunderstorm),
+            "\u{26C8}"
+        );
         assert_eq!(hourly_condition_icon(WeatherCondition::Snow), "\u{2744}");
         assert_eq!(hourly_condition_icon(WeatherCondition::Fog), "\u{1F32B}");
     }
@@ -3709,12 +3793,21 @@ mod tests {
         let content = buffer_to_string(buffer);
 
         // Verify all major sections are present
-        assert!(content.contains("WEATHER"), "WEATHER section should be visible at 80x24");
-        assert!(content.contains("TIDES"), "TIDES section should be visible at 80x24");
+        assert!(
+            content.contains("WEATHER"),
+            "WEATHER section should be visible at 80x24"
+        );
+        assert!(
+            content.contains("TIDES"),
+            "TIDES section should be visible at 80x24"
+        );
         // Note: WATER QUALITY may be below fold, but should not panic
 
         // Verify no crash and meaningful content rendered
-        assert!(!content.trim().is_empty(), "Should render meaningful content");
+        assert!(
+            !content.trim().is_empty(),
+            "Should render meaningful content"
+        );
     }
 
     #[test]
@@ -3735,10 +3828,22 @@ mod tests {
         let content = buffer_to_string(buffer);
 
         // At 120x40, all sections should be visible without scrolling
-        assert!(content.contains("WEATHER"), "WEATHER should be visible at 120x40");
-        assert!(content.contains("TIDES"), "TIDES should be visible at 120x40");
-        assert!(content.contains("HOURLY FORECAST"), "HOURLY FORECAST should be visible at 120x40");
-        assert!(content.contains("WATER QUALITY"), "WATER QUALITY should be visible at 120x40");
+        assert!(
+            content.contains("WEATHER"),
+            "WEATHER should be visible at 120x40"
+        );
+        assert!(
+            content.contains("TIDES"),
+            "TIDES should be visible at 120x40"
+        );
+        assert!(
+            content.contains("HOURLY FORECAST"),
+            "HOURLY FORECAST should be visible at 120x40"
+        );
+        assert!(
+            content.contains("WATER QUALITY"),
+            "WATER QUALITY should be visible at 120x40"
+        );
     }
 
     #[test]
@@ -3759,10 +3864,16 @@ mod tests {
         let content = buffer_to_string(buffer);
 
         // Should render without panic
-        assert!(!content.trim().is_empty(), "Should render content at small size");
+        assert!(
+            !content.trim().is_empty(),
+            "Should render content at small size"
+        );
 
         // At minimum, top sections should be visible
-        assert!(content.contains("WEATHER"), "WEATHER should be visible at top");
+        assert!(
+            content.contains("WEATHER"),
+            "WEATHER should be visible at top"
+        );
     }
 
     #[test]
@@ -3806,7 +3917,10 @@ mod tests {
         let content = buffer_to_string(buffer);
 
         // May have limited content but should not crash
-        assert!(!content.is_empty(), "Should render something even at very small size");
+        assert!(
+            !content.is_empty(),
+            "Should render something even at very small size"
+        );
     }
 
     // ------------------------------------------------------------------------
@@ -3830,7 +3944,10 @@ mod tests {
 
         let buffer = terminal.backend().buffer();
         let content_at_top = buffer_to_string(buffer);
-        assert!(content_at_top.contains("WEATHER"), "Should see WEATHER at top");
+        assert!(
+            content_at_top.contains("WEATHER"),
+            "Should see WEATHER at top"
+        );
 
         // Scroll down
         app.detail_scroll_offset = 10;
@@ -3845,7 +3962,10 @@ mod tests {
 
         // After scrolling, content should change (different sections visible)
         // The key is that rendering doesn't panic
-        assert!(!content_scrolled.trim().is_empty(), "Should render after scrolling");
+        assert!(
+            !content_scrolled.trim().is_empty(),
+            "Should render after scrolling"
+        );
 
         // Scroll to maximum
         app.detail_scroll_offset = 100; // Will be clamped
@@ -3856,7 +3976,10 @@ mod tests {
             .unwrap();
 
         // Scroll offset should be clamped to valid range
-        assert!(app.detail_scroll_offset <= 100, "Scroll offset should be clamped");
+        assert!(
+            app.detail_scroll_offset <= 100,
+            "Scroll offset should be clamped"
+        );
     }
 
     #[test]
@@ -3891,7 +4014,10 @@ mod tests {
         let activity_row_5 = find_row_containing(buffer, "Activity");
         let help_row_5 = find_row_containing(buffer, "Back");
 
-        assert_eq!(activity_row_0, activity_row_5, "Activity selector should stay fixed");
+        assert_eq!(
+            activity_row_0, activity_row_5,
+            "Activity selector should stay fixed"
+        );
         assert_eq!(help_row_0, help_row_5, "Help bar should stay fixed");
     }
 
@@ -3993,8 +4119,10 @@ mod tests {
         let content = buffer_to_string(buffer);
 
         // Expanded chart should have Y-axis labels
-        assert!(content.contains("0m") || content.contains("1m"),
-            "Expanded chart should have Y-axis meter labels");
+        assert!(
+            content.contains("0m") || content.contains("1m"),
+            "Expanded chart should have Y-axis meter labels"
+        );
     }
 
     // ------------------------------------------------------------------------
@@ -4026,8 +4154,14 @@ mod tests {
         // Verify all sections are present
         assert!(weather_row.is_some(), "WEATHER section should be present");
         assert!(tides_row.is_some(), "TIDES section should be present");
-        assert!(hourly_row.is_some(), "HOURLY FORECAST section should be present");
-        assert!(water_quality_row.is_some(), "WATER QUALITY section should be present");
+        assert!(
+            hourly_row.is_some(),
+            "HOURLY FORECAST section should be present"
+        );
+        assert!(
+            water_quality_row.is_some(),
+            "WATER QUALITY section should be present"
+        );
 
         // Verify order: WEATHER < TIDES < HOURLY FORECAST < WATER QUALITY
         let weather_y = weather_row.unwrap();
@@ -4035,12 +4169,24 @@ mod tests {
         let hourly_y = hourly_row.unwrap();
         let water_quality_y = water_quality_row.unwrap();
 
-        assert!(weather_y < tides_y,
-            "WEATHER (row {}) should appear before TIDES (row {})", weather_y, tides_y);
-        assert!(tides_y < hourly_y,
-            "TIDES (row {}) should appear before HOURLY FORECAST (row {})", tides_y, hourly_y);
-        assert!(hourly_y < water_quality_y,
-            "HOURLY FORECAST (row {}) should appear before WATER QUALITY (row {})", hourly_y, water_quality_y);
+        assert!(
+            weather_y < tides_y,
+            "WEATHER (row {}) should appear before TIDES (row {})",
+            weather_y,
+            tides_y
+        );
+        assert!(
+            tides_y < hourly_y,
+            "TIDES (row {}) should appear before HOURLY FORECAST (row {})",
+            tides_y,
+            hourly_y
+        );
+        assert!(
+            hourly_y < water_quality_y,
+            "HOURLY FORECAST (row {}) should appear before WATER QUALITY (row {})",
+            hourly_y,
+            water_quality_y
+        );
     }
 
     #[test]
@@ -4118,8 +4264,14 @@ mod tests {
         let content = buffer_to_string(buffer);
 
         // Should render without crashing
-        assert!(!content.trim().is_empty(), "Should render with missing weather");
-        assert!(content.contains("WEATHER"), "Should still show WEATHER section header");
+        assert!(
+            !content.trim().is_empty(),
+            "Should render with missing weather"
+        );
+        assert!(
+            content.contains("WEATHER"),
+            "Should still show WEATHER section header"
+        );
         assert!(
             content.contains("unavailable") || content.contains("WEATHER"),
             "Should indicate missing weather data"
@@ -4148,8 +4300,14 @@ mod tests {
         let content = buffer_to_string(buffer);
 
         // Should render without crashing
-        assert!(!content.trim().is_empty(), "Should render with missing tides");
-        assert!(content.contains("TIDES"), "Should still show TIDES section header");
+        assert!(
+            !content.trim().is_empty(),
+            "Should render with missing tides"
+        );
+        assert!(
+            content.contains("TIDES"),
+            "Should still show TIDES section header"
+        );
     }
 
     #[test]
@@ -4174,7 +4332,10 @@ mod tests {
         let content = buffer_to_string(buffer);
 
         // Should render without crashing
-        assert!(!content.trim().is_empty(), "Should render with missing water quality");
+        assert!(
+            !content.trim().is_empty(),
+            "Should render with missing water quality"
+        );
     }
 
     #[test]
@@ -4182,12 +4343,7 @@ mod tests {
         let backend = TestBackend::new(80, 30);
         let mut terminal = Terminal::new(backend).unwrap();
 
-        let mut app = create_test_app_with_conditions(
-            "kitsilano",
-            None,
-            None,
-            None,
-        );
+        let mut app = create_test_app_with_conditions("kitsilano", None, None, None);
 
         terminal
             .draw(|frame| {
@@ -4199,7 +4355,10 @@ mod tests {
         let content = buffer_to_string(buffer);
 
         // Should render without crashing
-        assert!(!content.trim().is_empty(), "Should render even with all data missing");
+        assert!(
+            !content.trim().is_empty(),
+            "Should render even with all data missing"
+        );
     }
 
     // ------------------------------------------------------------------------
@@ -4265,7 +4424,10 @@ mod tests {
         let content = buffer_to_string(buffer);
 
         // Should not panic and should render something
-        assert!(!content.trim().is_empty(), "Should render with expanded chart and scroll");
+        assert!(
+            !content.trim().is_empty(),
+            "Should render with expanded chart and scroll"
+        );
     }
 
     #[test]
@@ -4314,10 +4476,16 @@ mod tests {
         let content = buffer_to_string(buffer);
 
         // Verify no panic and meaningful content
-        assert!(!content.trim().is_empty(), "Should render with all features active");
+        assert!(
+            !content.trim().is_empty(),
+            "Should render with all features active"
+        );
 
         // Fixed elements should be present
-        assert!(content.contains("Activity"), "Activity selector should be present");
+        assert!(
+            content.contains("Activity"),
+            "Activity selector should be present"
+        );
         assert!(
             content.contains("Back") || content.contains("Quit"),
             "Help bar should be present"
@@ -4373,13 +4541,13 @@ mod tests {
     #[test]
     fn test_integration_various_terminal_sizes_no_panic() {
         let sizes = [
-            (80, 24),   // Standard
-            (120, 40),  // Large
-            (80, 20),   // Small height
-            (60, 24),   // Narrow
-            (100, 30),  // Medium
-            (40, 15),   // Very small
-            (200, 50),  // Very large
+            (80, 24),  // Standard
+            (120, 40), // Large
+            (80, 20),  // Small height
+            (60, 24),  // Narrow
+            (100, 30), // Medium
+            (40, 15),  // Very small
+            (200, 50), // Very large
         ];
 
         for (width, height) in sizes {

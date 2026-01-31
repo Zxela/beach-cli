@@ -183,11 +183,17 @@ impl App {
         // Build beach conditions for each beach
         let mut wq_index = 0;
         for (i, beach) in beaches.iter().enumerate() {
-            let weather = weather_results
+            // Get existing conditions to preserve stale data on fetch failure
+            let existing = self.beach_conditions.get(beach.id);
+
+            // Use new weather data if available, otherwise preserve existing
+            let new_weather = weather_results
                 .get(i)
                 .and_then(|r| r.as_ref().ok().cloned());
+            let weather = new_weather.or_else(|| existing.and_then(|e| e.weather.clone()));
 
-            let water_quality = if beach.water_quality_id.is_some() {
+            // Use new water quality data if available, otherwise preserve existing
+            let new_water_quality = if beach.water_quality_id.is_some() {
                 let result = water_quality_results
                     .get(wq_index)
                     .and_then(|r| r.as_ref().ok().cloned());
@@ -196,11 +202,18 @@ impl App {
             } else {
                 None
             };
+            let water_quality =
+                new_water_quality.or_else(|| existing.and_then(|e| e.water_quality.clone()));
+
+            // Use new tides if available, otherwise preserve existing
+            let tides = tides_result
+                .clone()
+                .or_else(|| existing.and_then(|e| e.tides.clone()));
 
             let conditions = BeachConditions {
                 beach: *beach,
                 weather,
-                tides: tides_result.clone(),
+                tides,
                 water_quality,
             };
 
@@ -1572,7 +1585,10 @@ mod tests {
         assert!(app.tide_chart_expanded, "Should be expanded after 't'");
 
         app.handle_key(key_event(KeyCode::Char('t')));
-        assert!(!app.tide_chart_expanded, "Should be collapsed after second 't'");
+        assert!(
+            !app.tide_chart_expanded,
+            "Should be collapsed after second 't'"
+        );
     }
 
     #[test]
@@ -1583,7 +1599,10 @@ mod tests {
 
         app.handle_key(key_event(KeyCode::Char('t')));
         // 't' in BeachList should not toggle tide chart (no handler)
-        assert!(!app.tide_chart_expanded, "t key should not toggle in BeachList");
+        assert!(
+            !app.tide_chart_expanded,
+            "t key should not toggle in BeachList"
+        );
     }
 
     #[test]
@@ -1594,6 +1613,9 @@ mod tests {
 
         app.handle_key(key_event(KeyCode::Char('t')));
         // 't' in PlanTrip should not toggle tide chart (no handler)
-        assert!(!app.tide_chart_expanded, "t key should not toggle in PlanTrip");
+        assert!(
+            !app.tide_chart_expanded,
+            "t key should not toggle in PlanTrip"
+        );
     }
 }
