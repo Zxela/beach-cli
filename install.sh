@@ -86,7 +86,7 @@ get_latest_version() {
 
 # Download and install binary
 install_binary() {
-    DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/$BINARY_NAME-${VERSION#v}-$PLATFORM.tar.gz"
+    DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/$BINARY_NAME-$PLATFORM.tar.gz"
 
     info "Downloading from: $DOWNLOAD_URL"
 
