@@ -1,6 +1,6 @@
 [package]
 name = "vanbeach"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "A CLI tool to view Vancouver beach conditions including weather, tides, and water quality"
 authors = ["Vancouver Beach CLI"]
