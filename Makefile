@@ -113,6 +113,41 @@ release-draft: ## Create draft release on GitHub
 		--repo $(GITHUB_REPO)
 	@echo "Draft release v$(VERSION) created on GitHub"
 
+## Tagging & Versioning
+
+tag: ## Create and push a git tag for current version (triggers GitHub release)
+	@if git rev-parse "v$(VERSION)" >/dev/null 2>&1; then \
+		echo "Error: Tag v$(VERSION) already exists"; \
+		exit 1; \
+	fi
+	@echo "Creating tag v$(VERSION)..."
+	git tag -a "v$(VERSION)" -m "Release v$(VERSION)"
+	@echo "Pushing tag to origin..."
+	git push origin "v$(VERSION)"
+	@echo ""
+	@echo "Tag v$(VERSION) pushed! GitHub Actions will build and create the release."
+	@echo "Watch progress at: https://github.com/$(GITHUB_REPO)/actions"
+
+tag-dry-run: ## Show what tag would be created (without creating it)
+	@echo "Would create tag: v$(VERSION)"
+	@echo "Current git status:"
+	@git status --short
+
+bump-patch: ## Bump patch version (0.1.0 -> 0.1.1)
+	@NEW_VERSION=$$(echo $(VERSION) | awk -F. '{print $$1"."$$2"."$$3+1}'); \
+	sed -i 's/^version = "$(VERSION)"/version = "'$$NEW_VERSION'"/' Cargo.toml; \
+	echo "Bumped version: $(VERSION) -> $$NEW_VERSION"
+
+bump-minor: ## Bump minor version (0.1.0 -> 0.2.0)
+	@NEW_VERSION=$$(echo $(VERSION) | awk -F. '{print $$1"."$$2+1".0"}'); \
+	sed -i 's/^version = "$(VERSION)"/version = "'$$NEW_VERSION'"/' Cargo.toml; \
+	echo "Bumped version: $(VERSION) -> $$NEW_VERSION"
+
+bump-major: ## Bump major version (0.1.0 -> 1.0.0)
+	@NEW_VERSION=$$(echo $(VERSION) | awk -F. '{print $$1+1".0.0"}'); \
+	sed -i 's/^version = "$(VERSION)"/version = "'$$NEW_VERSION'"/' Cargo.toml; \
+	echo "Bumped version: $(VERSION) -> $$NEW_VERSION"
+
 ## Utilities
 
 clean: ## Remove build artifacts
