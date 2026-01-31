@@ -88,22 +88,24 @@ pub fn render(frame: &mut Frame, app: &App, beach_id: &str) {
     // Determine if we need to show the Best Window section
     let show_best_window = app.current_activity.is_some();
 
-    // Create layout: Activity selector, Weather/Tides row, Water Quality row,
-    // Best Window (if activity selected), Help row
+    // Create layout: Activity selector, then vertically stacked content sections, Help row
+    // Section heights: weather(7), tides(5), water_quality(4), best_window(6)
     let constraints = if show_best_window {
         vec![
-            Constraint::Length(1), // Activity selector row
-            Constraint::Min(6),    // Weather and Tides section
-            Constraint::Length(4), // Water Quality section
-            Constraint::Length(6), // Best Window Today section
-            Constraint::Length(2), // Help text
+            Constraint::Length(1),  // Activity selector row
+            Constraint::Length(7),  // Weather section (full width)
+            Constraint::Length(5),  // Tides section (full width)
+            Constraint::Length(4),  // Water Quality section (full width)
+            Constraint::Length(6),  // Best Window Today section (full width)
+            Constraint::Length(2),  // Help text
         ]
     } else {
         vec![
-            Constraint::Length(1), // Activity selector row
-            Constraint::Min(6),    // Weather and Tides section
-            Constraint::Length(4), // Water Quality section
-            Constraint::Length(2), // Help text
+            Constraint::Length(1),  // Activity selector row
+            Constraint::Length(7),  // Weather section (full width)
+            Constraint::Length(5),  // Tides section (full width)
+            Constraint::Length(4),  // Water Quality section (full width)
+            Constraint::Length(2),  // Help text
         ]
     };
 
@@ -115,23 +117,17 @@ pub fn render(frame: &mut Frame, app: &App, beach_id: &str) {
     // Render activity selector at the top
     render_activity_selector(frame, chunks[0], app.current_activity);
 
-    // Split the weather/tides section into Weather and Tides columns
-    let top_columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(chunks[1]);
-
-    // Render sections
-    render_weather_section(frame, top_columns[0], conditions.weather.as_ref());
-    render_tides_section(frame, top_columns[1], conditions.tides.as_ref());
-    render_water_quality_section(frame, chunks[2], conditions.water_quality.as_ref());
+    // Render sections vertically stacked at full width
+    render_weather_section(frame, chunks[1], conditions.weather.as_ref());
+    render_tides_section(frame, chunks[2], conditions.tides.as_ref());
+    render_water_quality_section(frame, chunks[3], conditions.water_quality.as_ref());
 
     // Render Best Window Today section if activity is selected
     if show_best_window {
-        render_best_window_section(frame, chunks[3], app, beach_id);
-        render_help_text(frame, chunks[4]);
+        render_best_window_section(frame, chunks[4], app, beach_id);
+        render_help_text(frame, chunks[5]);
     } else {
-        render_help_text(frame, chunks[3]);
+        render_help_text(frame, chunks[4]);
     }
 }
 
@@ -1446,6 +1442,165 @@ mod tests {
         assert!(
             windows.is_empty(),
             "Should have no windows when starting after sunset"
+        );
+    }
+
+    // ========================================================================
+    // Vertical Layout Tests
+    // ========================================================================
+
+    #[test]
+    fn test_vertical_layout_sections_in_correct_order() {
+        // Test that sections appear vertically stacked in order:
+        // WEATHER, TIDES, WATER QUALITY
+        let backend = TestBackend::new(80, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let app = create_test_app_with_conditions(
+            "kitsilano",
+            Some(create_test_weather()),
+            Some(create_test_tides()),
+            Some(create_test_water_quality()),
+        );
+
+        terminal
+            .draw(|frame| {
+                render(frame, &app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        // Find the row positions of each section header
+        let mut weather_row: Option<u16> = None;
+        let mut tides_row: Option<u16> = None;
+        let mut water_quality_row: Option<u16> = None;
+
+        for y in 0..buffer.area().height {
+            let mut row_content = String::new();
+            for x in 0..buffer.area().width {
+                row_content.push_str(buffer.cell((x, y)).unwrap().symbol());
+            }
+            if row_content.contains("WEATHER") && weather_row.is_none() {
+                weather_row = Some(y);
+            }
+            if row_content.contains("TIDES") && tides_row.is_none() {
+                tides_row = Some(y);
+            }
+            if row_content.contains("WATER QUALITY") && water_quality_row.is_none() {
+                water_quality_row = Some(y);
+            }
+        }
+
+        // Verify all sections are present
+        assert!(weather_row.is_some(), "WEATHER section should be present");
+        assert!(tides_row.is_some(), "TIDES section should be present");
+        assert!(
+            water_quality_row.is_some(),
+            "WATER QUALITY section should be present"
+        );
+
+        // Verify vertical order: WEATHER < TIDES < WATER QUALITY
+        let weather_y = weather_row.unwrap();
+        let tides_y = tides_row.unwrap();
+        let water_quality_y = water_quality_row.unwrap();
+
+        assert!(
+            weather_y < tides_y,
+            "WEATHER (row {}) should appear before TIDES (row {})",
+            weather_y,
+            tides_y
+        );
+        assert!(
+            tides_y < water_quality_y,
+            "TIDES (row {}) should appear before WATER QUALITY (row {})",
+            tides_y,
+            water_quality_y
+        );
+    }
+
+    #[test]
+    fn test_layout_works_at_80_columns_minimum() {
+        // Test that layout renders correctly at 80 column minimum width
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let app = create_test_app_with_conditions(
+            "kitsilano",
+            Some(create_test_weather()),
+            Some(create_test_tides()),
+            Some(create_test_water_quality()),
+        );
+
+        terminal
+            .draw(|frame| {
+                render(frame, &app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+
+        // Verify key content is visible at 80 columns
+        assert!(
+            content.contains("WEATHER"),
+            "WEATHER should be visible at 80 columns"
+        );
+        assert!(
+            content.contains("TIDES"),
+            "TIDES should be visible at 80 columns"
+        );
+        assert!(
+            content.contains("WATER"),
+            "WATER QUALITY should be visible at 80 columns"
+        );
+    }
+
+    #[test]
+    fn test_weather_section_full_width() {
+        // Test that weather section content renders at full width (not 50%)
+        let backend = TestBackend::new(80, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let app = create_test_app_with_conditions(
+            "kitsilano",
+            Some(create_test_weather()),
+            Some(create_test_tides()),
+            None,
+        );
+
+        terminal
+            .draw(|frame| {
+                render(frame, &app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        // Find WEATHER and TIDES rows
+        let mut weather_row: Option<u16> = None;
+        let mut tides_row: Option<u16> = None;
+
+        for y in 0..buffer.area().height {
+            let mut row_content = String::new();
+            for x in 0..buffer.area().width {
+                row_content.push_str(buffer.cell((x, y)).unwrap().symbol());
+            }
+            if row_content.contains("WEATHER") {
+                weather_row = Some(y);
+            }
+            if row_content.contains("TIDES") {
+                tides_row = Some(y);
+            }
+        }
+
+        // Verify WEATHER and TIDES are NOT on the same row (vertical layout)
+        assert!(weather_row.is_some(), "WEATHER section should exist");
+        assert!(tides_row.is_some(), "TIDES section should exist");
+        assert_ne!(
+            weather_row.unwrap(),
+            tides_row.unwrap(),
+            "WEATHER and TIDES should be on different rows (vertical layout, not horizontal)"
         );
     }
 }
