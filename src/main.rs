@@ -9,6 +9,7 @@ mod cache;
 pub mod cli;
 mod crowd;
 mod data;
+mod refresh;
 mod ui;
 
 use std::io;
