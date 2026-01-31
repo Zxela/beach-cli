@@ -118,21 +118,21 @@ release-draft: ## Create draft release on GitHub
 release-patch: ## Bump patch version, commit, push, and create release tag
 	@make bump-patch
 	@git add Cargo.toml
-	@git commit -m "chore: bump version to $$(grep '^version' Cargo.toml | head -1 | cut -d'\"' -f2)"
+	@git commit -m "chore: bump version to $$(make version)"
 	@git push
 	@make tag
 
 release-minor: ## Bump minor version, commit, push, and create release tag
 	@make bump-minor
 	@git add Cargo.toml
-	@git commit -m "chore: bump version to $$(grep '^version' Cargo.toml | head -1 | cut -d'\"' -f2)"
+	@git commit -m "chore: bump version to $$(make version)"
 	@git push
 	@make tag
 
 release-major: ## Bump major version, commit, push, and create release tag
 	@make bump-major
 	@git add Cargo.toml
-	@git commit -m "chore: bump version to $$(grep '^version' Cargo.toml | head -1 | cut -d'\"' -f2)"
+	@git commit -m "chore: bump version to $$(make version)"
 	@git push
 	@make tag
 
