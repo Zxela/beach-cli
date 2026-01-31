@@ -13,7 +13,7 @@ use ratatui::{
 
 use chrono::{Local, Timelike};
 
-use crate::activities::{get_profile, sunset_time_scorer_dynamic, Activity};
+use crate::activities::{get_profile, sunset_time_scorer_dynamic, Activity, ScoreFactors, TimeSlotScore};
 use crate::app::App;
 use crate::data::{TideState, WaterStatus, WeatherCondition};
 
@@ -436,6 +436,8 @@ struct TimeWindow {
     end_hour: u8,
     score: u8,
     reason: String,
+    /// Factor breakdown for score transparency
+    factors: Option<ScoreFactors>,
 }
 
 /// Renders the "Best Window Today" section showing top 3 time slots for the selected activity
@@ -530,11 +532,73 @@ fn render_best_window_section(frame: &mut Frame, area: Rect, app: &App, beach_id
                 format!("   {}", window.reason),
                 Style::default().fg(colors::SECONDARY),
             )));
+
+            // Add compact factor bars for the first (best) window
+            if i == 0 {
+                if let Some(ref factors) = window.factors {
+                    lines.push(render_factor_bars(factors, activity));
+                }
+            }
         }
     }
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, area);
+}
+
+/// Renders a compact line showing factor scores as visual bars
+fn render_factor_bars(factors: &ScoreFactors, activity: Activity) -> Line<'static> {
+    let mut spans = vec![Span::raw("   ")];
+
+    // Helper to create a mini bar (5 chars wide)
+    let make_bar = |score: f32, label: &str, color: Color| -> Vec<Span<'static>> {
+        let filled = (score * 5.0).round() as usize;
+        let empty = 5 - filled;
+        vec![
+            Span::styled(label.to_string(), Style::default().fg(colors::SECONDARY)),
+            Span::styled("▰".repeat(filled), Style::default().fg(color)),
+            Span::styled("▱".repeat(empty), Style::default().fg(colors::SECONDARY)),
+            Span::raw(" "),
+        ]
+    };
+
+    let score_color = |score: f32| -> Color {
+        if score >= 0.8 {
+            colors::SAFE
+        } else if score >= 0.5 {
+            colors::ADVISORY
+        } else {
+            colors::CLOSED
+        }
+    };
+
+    // Temperature - always shown
+    spans.extend(make_bar(factors.temperature, "T:", score_color(factors.temperature)));
+
+    // Activity-specific factors
+    match activity {
+        Activity::Swimming => {
+            spans.extend(make_bar(factors.water_quality, "W:", score_color(factors.water_quality)));
+            spans.extend(make_bar(factors.tide, "Ti:", score_color(factors.tide)));
+        }
+        Activity::Sailing => {
+            spans.extend(make_bar(factors.wind, "Wi:", score_color(factors.wind)));
+            spans.extend(make_bar(factors.tide, "Ti:", score_color(factors.tide)));
+        }
+        Activity::Sunbathing => {
+            spans.extend(make_bar(factors.uv, "UV:", score_color(factors.uv)));
+            spans.extend(make_bar(factors.wind, "Wi:", score_color(factors.wind)));
+        }
+        Activity::Sunset => {
+            spans.extend(make_bar(factors.time_of_day, "Ti:", score_color(factors.time_of_day)));
+        }
+        Activity::Peace => {
+            spans.extend(make_bar(factors.crowd, "Cr:", score_color(factors.crowd)));
+            spans.extend(make_bar(factors.wind, "Wi:", score_color(factors.wind)));
+        }
+    }
+
+    Line::from(spans)
 }
 
 /// Computes the best time windows for a given activity and beach conditions
@@ -598,7 +662,7 @@ fn compute_best_windows_from_hour(
     }
 
     let start_hour = current_hour.max(6); // Don't go before 6am
-    let mut hourly_scores: Vec<(u8, u8)> = Vec::new();
+    let mut hourly_scores: Vec<TimeSlotScore> = Vec::new();
     for hour in start_hour..=effective_end_hour {
         // Estimate crowd level based on time of day (simple heuristic)
         let crowd_level = estimate_crowd_level(hour);
@@ -635,18 +699,11 @@ fn compute_best_windows_from_hour(
             score.score = adjusted.clamp(0.0, 100.0) as u8;
         }
 
-        hourly_scores.push((hour, score.score));
+        hourly_scores.push(score);
     }
 
     // Group adjacent high-scoring hours into windows
-    group_into_windows(
-        &hourly_scores,
-        activity,
-        temp,
-        water_status,
-        tide_height,
-        max_tide,
-    )
+    group_into_windows(&hourly_scores, activity)
 }
 
 /// Estimates crowd level based on time of day (0.0 = empty, 1.0 = packed)
@@ -664,14 +721,7 @@ fn estimate_crowd_level(hour: u8) -> f32 {
 }
 
 /// Groups hourly scores into time windows and returns top windows sorted by score
-fn group_into_windows(
-    hourly_scores: &[(u8, u8)],
-    activity: Activity,
-    temp: f32,
-    water_status: crate::data::WaterStatus,
-    tide_height: f32,
-    max_tide: f32,
-) -> Vec<TimeWindow> {
+fn group_into_windows(hourly_scores: &[TimeSlotScore], activity: Activity) -> Vec<TimeWindow> {
     if hourly_scores.is_empty() {
         return vec![];
     }
@@ -679,27 +729,34 @@ fn group_into_windows(
     // Find contiguous windows where score is above threshold (50)
     let threshold = 50u8;
     let mut windows: Vec<TimeWindow> = Vec::new();
-    let mut current_window: Option<(u8, u8, u8)> = None; // (start, end, max_score)
+    // Track: (start_hour, end_hour, best_score_in_window)
+    let mut current_window: Option<(u8, u8, &TimeSlotScore)> = None;
 
-    for &(hour, score) in hourly_scores {
-        if score >= threshold {
+    for slot in hourly_scores {
+        if slot.score >= threshold {
             match current_window {
-                Some((start, _, max_s)) => {
-                    current_window = Some((start, hour, max_s.max(score)));
+                Some((start, _, best)) => {
+                    // Extend window, update best if this score is higher
+                    if slot.score > best.score {
+                        current_window = Some((start, slot.hour, slot));
+                    } else {
+                        current_window = Some((start, slot.hour, best));
+                    }
                 }
                 None => {
-                    current_window = Some((hour, hour, score));
+                    current_window = Some((slot.hour, slot.hour, slot));
                 }
             }
         } else {
             // End current window if exists
-            if let Some((start, end, max_score)) = current_window {
-                let reason = generate_reason(activity, temp, water_status, tide_height, max_tide);
+            if let Some((start, end, best)) = current_window {
+                let reason = generate_reason_from_factors(&best.factors, activity);
                 windows.push(TimeWindow {
                     start_hour: start,
                     end_hour: end + 1, // End is exclusive
-                    score: max_score,
+                    score: best.score,
                     reason,
+                    factors: Some(best.factors.clone()),
                 });
                 current_window = None;
             }
@@ -707,28 +764,30 @@ fn group_into_windows(
     }
 
     // Don't forget the last window
-    if let Some((start, end, max_score)) = current_window {
-        let reason = generate_reason(activity, temp, water_status, tide_height, max_tide);
+    if let Some((start, end, best)) = current_window {
+        let reason = generate_reason_from_factors(&best.factors, activity);
         windows.push(TimeWindow {
             start_hour: start,
             end_hour: end + 1,
-            score: max_score,
+            score: best.score,
             reason,
+            factors: Some(best.factors.clone()),
         });
     }
 
     // If no windows above threshold, create windows from best individual hours
     if windows.is_empty() {
-        let mut sorted = hourly_scores.to_vec();
-        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        let mut sorted: Vec<_> = hourly_scores.iter().collect();
+        sorted.sort_by(|a, b| b.score.cmp(&a.score));
 
-        for &(hour, score) in sorted.iter().take(3) {
-            let reason = generate_reason(activity, temp, water_status, tide_height, max_tide);
+        for slot in sorted.iter().take(3) {
+            let reason = generate_reason_from_factors(&slot.factors, activity);
             windows.push(TimeWindow {
-                start_hour: hour,
-                end_hour: hour + 1,
-                score,
+                start_hour: slot.hour,
+                end_hour: slot.hour + 1,
+                score: slot.score,
                 reason,
+                factors: Some(slot.factors.clone()),
             });
         }
     }
@@ -738,50 +797,58 @@ fn group_into_windows(
     windows
 }
 
-/// Generates a human-readable reason string for the time window
-fn generate_reason(
-    activity: Activity,
-    temp: f32,
-    water_status: crate::data::WaterStatus,
-    tide_height: f32,
-    max_tide: f32,
-) -> String {
-    let mut factors = Vec::new();
+/// Generates a human-readable reason string from score factors.
+/// Highlights the top contributing factors for the score.
+fn generate_reason_from_factors(factors: &ScoreFactors, activity: Activity) -> String {
+    // Collect factor names with their scores, filtering by relevance to activity
+    let mut scored_factors: Vec<(&str, f32)> = vec![
+        ("temp", factors.temperature),
+        ("wind", factors.wind),
+        ("uv", factors.uv),
+        ("timing", factors.time_of_day),
+    ];
 
-    // Temperature description
-    let temp_desc = if temp >= 25.0 {
-        format!("Hot ({:.0}C)", temp)
-    } else if temp >= 20.0 {
-        format!("Warm ({:.0}C)", temp)
-    } else if temp >= 15.0 {
-        format!("Mild ({:.0}C)", temp)
-    } else {
-        format!("Cool ({:.0}C)", temp)
-    };
-    factors.push(temp_desc);
-
-    // Water status (relevant for swimming)
+    // Add activity-specific factors
     if activity == Activity::Swimming {
-        match water_status {
-            crate::data::WaterStatus::Safe => factors.push("safe water".to_string()),
-            crate::data::WaterStatus::Advisory => factors.push("advisory in effect".to_string()),
-            crate::data::WaterStatus::Closed => factors.push("water closed".to_string()),
-            crate::data::WaterStatus::Unknown => {}
-        }
+        scored_factors.push(("water", factors.water_quality));
+    }
+    if matches!(activity, Activity::Swimming | Activity::Sailing) {
+        scored_factors.push(("tide", factors.tide));
+    }
+    if matches!(activity, Activity::Peace | Activity::Sunbathing) {
+        scored_factors.push(("crowd", factors.crowd));
     }
 
-    // Tide description
-    let tide_ratio = tide_height / max_tide;
-    let tide_desc = if tide_ratio > 0.7 {
-        "high tide"
-    } else if tide_ratio > 0.3 {
-        "mid-tide"
-    } else {
-        "low tide"
-    };
-    factors.push(tide_desc.to_string());
+    // Sort by score descending and take top contributors
+    scored_factors.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    factors.join(", ")
+    // Build reason from top 2-3 high-scoring factors (> 0.6)
+    let good_factors: Vec<&str> = scored_factors
+        .iter()
+        .filter(|(_, score)| *score > 0.6)
+        .take(3)
+        .map(|(name, _)| factor_to_readable(name))
+        .collect();
+
+    if good_factors.is_empty() {
+        "mixed conditions".to_string()
+    } else {
+        good_factors.join(", ")
+    }
+}
+
+/// Converts factor name to human-readable description
+fn factor_to_readable(factor: &str) -> &'static str {
+    match factor {
+        "temp" => "great temp",
+        "water" => "safe water",
+        "wind" => "calm winds",
+        "uv" => "good UV",
+        "tide" => "ideal tide",
+        "crowd" => "low crowds",
+        "timing" => "perfect timing",
+        _ => "good conditions",
+    }
 }
 
 /// Formats an hour (0-23) into a human-readable time string
