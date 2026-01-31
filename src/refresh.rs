@@ -2,6 +2,10 @@
 //!
 //! Provides automatic refresh of weather and water quality data in the background
 //! using tokio channels to communicate updates to the main application.
+//!
+//! Note: This infrastructure is prepared for future real-time updates but not yet wired up.
+
+#![allow(dead_code)]
 
 use std::time::Duration;
 use tokio::sync::mpsc;

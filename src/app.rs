@@ -577,6 +577,7 @@ impl App {
 
 /// Information about the best beach right now
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct BestBeachNow {
     /// Name of the beach
     pub beach_name: String,

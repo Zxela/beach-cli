@@ -162,6 +162,7 @@ impl WaterQuality {
     }
 
     /// Returns true if the water quality data is very stale (sample > 7 days old)
+    #[allow(dead_code)]
     pub fn is_very_stale(&self) -> bool {
         let today = chrono::Local::now().date_naive();
         let days_old = (today - self.sample_date).num_days();
