@@ -118,6 +118,13 @@ This will:
 - macOS x86_64 (Intel)
 - macOS aarch64 (Apple Silicon)
 
+## Dependencies
+
+- [ratatui](https://github.com/ratatui-org/ratatui) - TUI framework
+- [crossterm](https://github.com/crossterm-rs/crossterm) - Terminal backend
+- [tokio](https://tokio.rs/) - Async runtime
+- [reqwest](https://github.com/seanmonstar/reqwest) - HTTP client
+
 ## License
 
 MIT
