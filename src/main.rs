@@ -120,6 +120,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Main event loop
     loop {
+        // Check if refresh was requested
+        if app.refresh_requested {
+            app.refresh_requested = false;
+            // Show a brief "Refreshing..." state
+            app.state = AppState::Loading;
+            terminal.draw(|f| render_ui(f, &app))?;
+            app.load_all_data().await;
+        }
+
         // Render UI
         terminal.draw(|f| render_ui(f, &app))?;
 

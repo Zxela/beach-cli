@@ -48,6 +48,8 @@ pub struct App {
     pub pending_plan_trip: bool,
     /// Timestamp of last data refresh
     pub last_refresh: Option<DateTime<Local>>,
+    /// Flag indicating a refresh has been requested
+    pub refresh_requested: bool,
     /// Weather API client
     weather_client: WeatherClient,
     /// Tides API client
@@ -70,6 +72,7 @@ impl App {
             plan_time_range: (6, 21),
             pending_plan_trip: false,
             last_refresh: None,
+            refresh_requested: false,
             weather_client: WeatherClient::new(),
             tides_client: TidesClient::new(cache.clone()),
             water_quality_client: cache
@@ -116,6 +119,7 @@ impl App {
             plan_time_range: (6, 21),
             pending_plan_trip: false,
             last_refresh: None,
+            refresh_requested: false,
             weather_client,
             tides_client,
             water_quality_client,
@@ -301,6 +305,9 @@ impl App {
                 KeyCode::Char('5') => {
                     self.current_activity = Some(Activity::Peace);
                 }
+                KeyCode::Char('r') => {
+                    self.refresh_requested = true;
+                }
                 _ => {}
             },
             AppState::BeachDetail(_) => match key_event.code {
@@ -327,6 +334,9 @@ impl App {
                 }
                 KeyCode::Char('5') => {
                     self.current_activity = Some(Activity::Peace);
+                }
+                KeyCode::Char('r') => {
+                    self.refresh_requested = true;
                 }
                 _ => {}
             },

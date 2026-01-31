@@ -598,6 +598,8 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
         Span::raw(" Select  "),
         Span::styled("1-5", Style::default().fg(Color::Yellow)),
         Span::raw(" Activity  "),
+        Span::styled("r", Style::default().fg(Color::Yellow)),
+        Span::raw(" Refresh  "),
         Span::styled("q", Style::default().fg(Color::Yellow)),
         Span::raw(" Quit"),
     ];
