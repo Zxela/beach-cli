@@ -600,6 +600,8 @@ fn render_help(frame: &mut Frame, area: Rect, app: &App) {
         Span::raw(" Activity  "),
         Span::styled("r", Style::default().fg(Color::Yellow)),
         Span::raw(" Refresh  "),
+        Span::styled("?", Style::default().fg(Color::Yellow)),
+        Span::raw(" Help  "),
         Span::styled("q", Style::default().fg(Color::Yellow)),
         Span::raw(" Quit"),
     ];

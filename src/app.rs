@@ -50,6 +50,8 @@ pub struct App {
     pub last_refresh: Option<DateTime<Local>>,
     /// Flag indicating a refresh has been requested
     pub refresh_requested: bool,
+    /// Flag to show help overlay
+    pub show_help: bool,
     /// Weather API client
     weather_client: WeatherClient,
     /// Tides API client
@@ -73,6 +75,7 @@ impl App {
             pending_plan_trip: false,
             last_refresh: None,
             refresh_requested: false,
+            show_help: false,
             weather_client: WeatherClient::new(),
             tides_client: TidesClient::new(cache.clone()),
             water_quality_client: cache
@@ -120,6 +123,7 @@ impl App {
             pending_plan_trip: false,
             last_refresh: None,
             refresh_requested: false,
+            show_help: false,
             weather_client,
             tides_client,
             water_quality_client,
@@ -264,6 +268,17 @@ impl App {
     /// - `Esc` (in BeachDetail): Go back to list view
     /// - `Esc` (in PlanTrip): Go back to list view
     pub fn handle_key(&mut self, key_event: KeyEvent) {
+        // Handle help overlay - intercepts all keys when shown
+        if self.show_help {
+            match key_event.code {
+                KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
+                    self.show_help = false;
+                }
+                _ => {} // Ignore other keys when help is shown
+            }
+            return;
+        }
+
         match self.state {
             AppState::Loading => {
                 // Only quit is allowed during loading
@@ -308,6 +323,9 @@ impl App {
                 KeyCode::Char('r') => {
                     self.refresh_requested = true;
                 }
+                KeyCode::Char('?') => {
+                    self.show_help = true;
+                }
                 _ => {}
             },
             AppState::BeachDetail(_) => match key_event.code {
@@ -337,6 +355,9 @@ impl App {
                 }
                 KeyCode::Char('r') => {
                     self.refresh_requested = true;
+                }
+                KeyCode::Char('?') => {
+                    self.show_help = true;
                 }
                 _ => {}
             },

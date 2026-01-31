@@ -42,6 +42,7 @@ fn setup_panic_hook() {
 
 /// Renders the UI based on the current application state
 fn render_ui(frame: &mut ratatui::Frame, app: &App) {
+    // Render the main view
     match &app.state {
         AppState::Loading => {
             render_loading(frame);
@@ -55,6 +56,11 @@ fn render_ui(frame: &mut ratatui::Frame, app: &App) {
         AppState::PlanTrip => {
             ui::render_plan_trip(frame, app);
         }
+    }
+
+    // Render help overlay on top if active
+    if app.show_help {
+        ui::render_help_overlay(frame);
     }
 }
 
