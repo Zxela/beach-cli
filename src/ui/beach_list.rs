@@ -12,6 +12,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::activities::{get_profile, sunset_time_scorer_dynamic, Activity};
 use crate::app::App;
 use crate::data::{all_beaches, BeachConditions, WaterStatus, WeatherCondition};
 
@@ -208,6 +209,100 @@ fn generate_contextual_hint(conditions: Option<&BeachConditions>) -> Option<Stri
 
     // No specific hint
     None
+}
+
+/// Computes the best time today for a given beach and activity.
+/// Returns (hour, score) or None if no data available.
+fn compute_best_time_for_beach(
+    conditions: Option<&BeachConditions>,
+    activity: Activity,
+) -> Option<(u8, u8)> {
+    let conditions = conditions?;
+    let weather = conditions.weather.as_ref()?;
+    let profile = get_profile(activity);
+
+    let temp = weather.temperature as f32;
+    let wind = weather.wind as f32;
+    let uv = weather.uv as f32;
+    let sunset_hour = weather.sunset.hour() as u8;
+
+    let water_status = conditions
+        .water_quality
+        .as_ref()
+        .map(|wq| wq.effective_status())
+        .unwrap_or(WaterStatus::Unknown);
+
+    let (tide_height, max_tide) = conditions
+        .tides
+        .as_ref()
+        .map(|t| (t.current_height as f32, 4.8f32))
+        .unwrap_or((2.4, 4.8));
+
+    let current_hour = Local::now().hour() as u8;
+    let start_hour = current_hour.max(6);
+
+    // For sunset, cap at sunset hour
+    let end_hour = if activity == Activity::Sunset {
+        sunset_hour
+    } else {
+        21
+    };
+
+    if start_hour > end_hour {
+        return None;
+    }
+
+    let mut best_hour = start_hour;
+    let mut best_score: u8 = 0;
+
+    for hour in start_hour..=end_hour {
+        // Estimate crowd level
+        let crowd = match hour {
+            6..=7 => 0.1,
+            8..=9 => 0.2,
+            10..=11 => 0.4,
+            12..=14 => 0.8,
+            15..=17 => 0.6,
+            18..=19 => 0.4,
+            20..=21 => 0.2,
+            _ => 0.5,
+        };
+
+        let mut score_result = profile.score_time_slot(
+            hour,
+            conditions.beach.id,
+            temp,
+            wind,
+            uv,
+            water_status,
+            tide_height,
+            max_tide,
+            crowd,
+        );
+
+        // Apply dynamic sunset scoring
+        if activity == Activity::Sunset {
+            let time_score = sunset_time_scorer_dynamic(hour, sunset_hour);
+            let adjusted = score_result.score as f32 * (0.3 + 0.7 * time_score);
+            score_result.score = adjusted.clamp(0.0, 100.0) as u8;
+        }
+
+        if score_result.score > best_score {
+            best_score = score_result.score;
+            best_hour = hour;
+        }
+    }
+
+    if best_score > 0 {
+        Some((best_hour, best_score))
+    } else {
+        None
+    }
+}
+
+/// Formats an hour as a time string (e.g., "15:00")
+fn format_hour_short(hour: u8) -> String {
+    format!("{:02}:00", hour)
 }
 
 /// Renders the beach list screen
@@ -444,13 +539,39 @@ fn render_list(frame: &mut Frame, app: &App, area: Rect) {
         // Add tide sparkline spans
         spans.extend(tide_sparkline_spans);
 
-        // Add contextual hint in muted color if present
-        if let Some(hint_text) = hint {
-            spans.push(Span::raw("   "));
-            spans.push(Span::styled(
-                hint_text,
-                Style::default().fg(Color::DarkGray),
-            ));
+        // Add best time column if an activity is selected
+        if let Some(activity) = app.current_activity {
+            spans.push(Span::raw(" "));
+            if let Some((best_hour, score)) = compute_best_time_for_beach(conditions, activity) {
+                let score_color = if score >= 80 {
+                    Color::Green
+                } else if score >= 60 {
+                    Color::Yellow
+                } else {
+                    Color::Red
+                };
+                spans.push(Span::styled(
+                    format_hour_short(best_hour),
+                    Style::default().fg(Color::White),
+                ));
+                spans.push(Span::styled(
+                    format!(" ({})", score),
+                    Style::default().fg(score_color),
+                ));
+            } else {
+                spans.push(Span::styled("--:-- (--)", Style::default().fg(Color::DarkGray)));
+            }
+        }
+
+        // Add contextual hint in muted color if present (only when no activity selected)
+        if app.current_activity.is_none() {
+            if let Some(hint_text) = hint {
+                spans.push(Span::raw("   "));
+                spans.push(Span::styled(
+                    hint_text,
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
         }
 
         let line = Line::from(spans);
