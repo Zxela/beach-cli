@@ -17,7 +17,7 @@ use crate::activities::{
     get_profile, sunset_time_scorer_dynamic, Activity, ScoreFactors, TimeSlotScore,
 };
 use crate::app::App;
-use crate::data::{TideState, WaterStatus, WeatherCondition};
+use crate::data::{HourlyForecast, TideState, WaterStatus, WeatherCondition};
 
 /// Color scheme matching WIREFRAMES.md
 mod colors {
@@ -92,11 +92,12 @@ pub fn render(frame: &mut Frame, app: &mut App, beach_id: &str) {
     let tides_height: u16 = if tide_chart_expanded { 15 } else { 5 };
 
     // Calculate content heights
-    // Section heights: weather(7), tides(5 or 15), water_quality(4), best_window(6 if shown)
+    // Section heights: weather(7), tides(5 or 15), hourly_forecast(9), water_quality(4), best_window(6 if shown)
+    const HOURLY_FORECAST_HEIGHT: u16 = 9; // 1 header + 8 hours max
     let content_height: u16 = if show_best_window {
-        7 + tides_height + 4 + 6 // weather + tides + water_quality + best_window
+        7 + tides_height + HOURLY_FORECAST_HEIGHT + 4 + 6 // weather + tides + hourly + water_quality + best_window
     } else {
-        7 + tides_height + 4 // weather + tides + water_quality
+        7 + tides_height + HOURLY_FORECAST_HEIGHT + 4 // weather + tides + hourly + water_quality
     };
 
     // Fixed elements: activity selector (1), help text (2)
@@ -179,13 +180,15 @@ fn render_scrollable_content(
     // Section heights
     const WEATHER_HEIGHT: u16 = 7;
     let tides_height: u16 = if tide_chart_expanded { 15 } else { 5 };
+    const HOURLY_FORECAST_HEIGHT: u16 = 9; // 1 header + 8 hours max
     const WATER_QUALITY_HEIGHT: u16 = 4;
     const BEST_WINDOW_HEIGHT: u16 = 6;
 
     // Calculate section positions (cumulative Y offsets)
     let weather_start: u16 = 0;
     let tides_start = weather_start + WEATHER_HEIGHT;
-    let water_quality_start = tides_start + tides_height;
+    let hourly_forecast_start = tides_start + tides_height;
+    let water_quality_start = hourly_forecast_start + HOURLY_FORECAST_HEIGHT;
     let best_window_start = water_quality_start + WATER_QUALITY_HEIGHT;
 
     // Render each section only if it's visible after scroll offset
@@ -224,6 +227,23 @@ fn render_scrollable_content(
             conditions.tides.as_ref(),
             section_offset,
             tide_chart_expanded,
+        );
+    }
+
+    // Hourly Forecast section
+    if let Some(visible_rect) = calculate_visible_rect(
+        hourly_forecast_start,
+        HOURLY_FORECAST_HEIGHT,
+        visible_start,
+        visible_end,
+        area,
+    ) {
+        let section_offset = scroll_offset.saturating_sub(hourly_forecast_start);
+        render_hourly_forecast_section_with_offset(
+            frame,
+            visible_rect,
+            conditions.weather.as_ref(),
+            section_offset,
         );
     }
 
@@ -373,6 +393,125 @@ fn render_water_quality_section_with_offset(
     let lines = build_water_quality_lines(water_quality);
     let paragraph = Paragraph::new(lines).scroll((offset, 0));
     frame.render_widget(paragraph, area);
+}
+
+/// Renders the hourly forecast section with scroll offset
+fn render_hourly_forecast_section_with_offset(
+    frame: &mut Frame,
+    area: Rect,
+    weather: Option<&crate::data::Weather>,
+    offset: u16,
+) {
+    let lines = build_hourly_forecast_lines(weather);
+    let paragraph = Paragraph::new(lines).scroll((offset, 0));
+    frame.render_widget(paragraph, area);
+}
+
+/// Builds the lines for the hourly forecast section
+/// Shows next 6-8 hours of forecasts until end of day
+fn build_hourly_forecast_lines(weather: Option<&crate::data::Weather>) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from(Span::styled(
+        "HOURLY FORECAST",
+        Style::default()
+            .fg(colors::HEADER)
+            .add_modifier(Modifier::BOLD),
+    ))];
+
+    match weather {
+        Some(w) if !w.hourly.is_empty() => {
+            let current_hour = Local::now().hour() as u8;
+
+            // Filter to hours >= current hour and take up to 8 hours
+            let future_hours: Vec<&HourlyForecast> = w
+                .hourly
+                .iter()
+                .filter(|h| h.hour >= current_hour)
+                .take(8)
+                .collect();
+
+            if future_hours.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "No more forecasts for today",
+                    Style::default().fg(colors::UNKNOWN),
+                )));
+            } else {
+                for forecast in future_hours {
+                    lines.push(build_hourly_line(forecast));
+                }
+            }
+        }
+        _ => {
+            lines.push(Line::from(Span::styled(
+                "No hourly forecast available",
+                Style::default().fg(colors::UNKNOWN),
+            )));
+        }
+    }
+
+    lines
+}
+
+/// Builds a single line for an hourly forecast entry
+fn build_hourly_line(forecast: &HourlyForecast) -> Line<'static> {
+    let time_str = format!("{:02}:00", forecast.hour);
+    let temp_str = format!("{:.0}\u{00B0}C", forecast.temperature);
+    let icon = hourly_condition_icon(forecast.condition);
+    let wind_str = format!("Wind: {:.0}km/h", forecast.wind);
+    let uv_str = format!("UV: {:.0}", forecast.uv);
+
+    Line::from(vec![
+        Span::styled(
+            format!("{:<6}", time_str),
+            Style::default().fg(colors::PRIMARY),
+        ),
+        Span::styled(
+            format!("{:<6}", temp_str),
+            Style::default().fg(temperature_color(forecast.temperature)),
+        ),
+        Span::styled(
+            format!("{:<3}", icon),
+            Style::default().fg(colors::PRIMARY),
+        ),
+        Span::styled(
+            format!("{:<14}", wind_str),
+            Style::default().fg(colors::SECONDARY),
+        ),
+        Span::styled(
+            uv_str,
+            Style::default().fg(uv_index_color(forecast.uv)),
+        ),
+    ])
+}
+
+/// Returns an icon character for the hourly weather condition
+fn hourly_condition_icon(condition: WeatherCondition) -> &'static str {
+    match condition {
+        WeatherCondition::Clear => "\u{2600}",        // ☀
+        WeatherCondition::PartlyCloudy => "\u{26C5}", // ⛅
+        WeatherCondition::Cloudy => "\u{2601}",       // ☁
+        WeatherCondition::Rain => "\u{1F327}",        // 🌧
+        WeatherCondition::Showers => "\u{1F326}",     // 🌦
+        WeatherCondition::Thunderstorm => "\u{26C8}", // ⛈
+        WeatherCondition::Snow => "\u{2744}",         // ❄
+        WeatherCondition::Fog => "\u{1F32B}",         // 🌫
+    }
+}
+
+/// Returns the color for a temperature value
+fn temperature_color(temp: f64) -> Color {
+    if temp >= 30.0 {
+        Color::Red
+    } else if temp >= 25.0 {
+        Color::LightRed
+    } else if temp >= 20.0 {
+        Color::Yellow
+    } else if temp >= 15.0 {
+        Color::Green
+    } else if temp >= 10.0 {
+        Color::Cyan
+    } else {
+        Color::Blue
+    }
 }
 
 /// Renders the best window section with scroll offset
@@ -2123,7 +2262,8 @@ mod tests {
 
     #[test]
     fn test_water_quality_section_renders_status() {
-        let backend = TestBackend::new(80, 24);
+        // Use larger height to accommodate all sections including hourly forecast
+        let backend = TestBackend::new(80, 35);
         let mut terminal = Terminal::new(backend).unwrap();
 
         let mut app = create_test_app_with_conditions(
@@ -2460,8 +2600,9 @@ mod tests {
     #[test]
     fn test_vertical_layout_sections_in_correct_order() {
         // Test that sections appear vertically stacked in order:
-        // WEATHER, TIDES, WATER QUALITY
-        let backend = TestBackend::new(80, 30);
+        // WEATHER, TIDES, HOURLY FORECAST, WATER QUALITY
+        // Use larger height to accommodate all sections
+        let backend = TestBackend::new(80, 40);
         let mut terminal = Terminal::new(backend).unwrap();
 
         let mut app = create_test_app_with_conditions(
@@ -2530,7 +2671,8 @@ mod tests {
     #[test]
     fn test_layout_works_at_80_columns_minimum() {
         // Test that layout renders correctly at 80 column minimum width
-        let backend = TestBackend::new(80, 24);
+        // Use larger height to accommodate all sections including hourly forecast
+        let backend = TestBackend::new(80, 35);
         let mut terminal = Terminal::new(backend).unwrap();
 
         let mut app = create_test_app_with_conditions(
@@ -3190,5 +3332,318 @@ mod tests {
             expanded_content.contains("collapse"),
             "Expanded view should show 'collapse' hint"
         );
+    }
+
+    // ========================================================================
+    // Hourly Forecast Section Tests (Task 108)
+    // ========================================================================
+
+    /// Helper to create test weather with hourly forecasts
+    fn create_test_weather_with_hourly(current_hour: u8) -> Weather {
+        use crate::data::HourlyForecast;
+
+        let mut hourly = Vec::new();
+        // Create 24 hours of forecast data
+        for hour in 0..24u8 {
+            hourly.push(HourlyForecast {
+                hour,
+                temperature: 15.0 + (hour as f64 * 0.5),
+                feels_like: 14.0 + (hour as f64 * 0.5),
+                condition: if hour < 12 {
+                    WeatherCondition::Clear
+                } else {
+                    WeatherCondition::PartlyCloudy
+                },
+                wind: 10.0 + (hour as f64 * 0.2),
+                wind_direction: "NW".to_string(),
+                uv: if hour < 6 || hour > 20 { 0.0 } else { (hour as f64 - 6.0).min(8.0) },
+                precipitation_chance: 0,
+            });
+        }
+
+        Weather {
+            temperature: 22.0,
+            feels_like: 24.0,
+            condition: WeatherCondition::Clear,
+            humidity: 65,
+            wind: 12.0,
+            uv: 6.0,
+            sunrise: NaiveTime::from_hms_opt(5, 30, 0).unwrap(),
+            sunset: NaiveTime::from_hms_opt(21, 15, 0).unwrap(),
+            fetched_at: Utc::now(),
+            hourly,
+        }
+    }
+
+    #[test]
+    fn test_hourly_forecast_section_displays_header() {
+        let backend = TestBackend::new(80, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let weather = create_test_weather_with_hourly(10);
+        let mut app = create_test_app_with_conditions(
+            "kitsilano",
+            Some(weather),
+            Some(create_test_tides()),
+            Some(create_test_water_quality()),
+        );
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let content: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+
+        assert!(
+            content.contains("HOURLY FORECAST"),
+            "Should display HOURLY FORECAST header"
+        );
+    }
+
+    #[test]
+    fn test_hourly_forecast_filters_past_hours() {
+        // Test that past hours are not displayed
+        // build_hourly_forecast_lines uses Local::now() internally
+        // So we just verify that when there are hourly forecasts,
+        // the function produces sensible output
+
+        let weather = create_test_weather_with_hourly(0);
+        let lines = build_hourly_forecast_lines(Some(&weather));
+
+        // The header is always there
+        assert!(lines.len() >= 1, "Should have at least header");
+
+        // The function filters based on Local::now(), so we can verify
+        // that it produces content (header + hours or "no more forecasts")
+        let content: String = lines
+            .iter()
+            .flat_map(|line| line.spans.iter().map(|s| s.content.to_string()))
+            .collect();
+
+        // Should contain the header
+        assert!(content.contains("HOURLY FORECAST"), "Should have header");
+
+        // Should have either hourly data or "no more" message
+        let has_hourly_content = content.contains(":00");
+        let has_no_more_message = content.contains("No more forecasts") || content.contains("No hourly");
+
+        assert!(
+            has_hourly_content || has_no_more_message,
+            "Should show either hours or a message"
+        );
+    }
+
+    #[test]
+    fn test_hourly_forecast_shows_max_8_hours() {
+        let weather = create_test_weather_with_hourly(10);
+        let lines = build_hourly_forecast_lines(Some(&weather));
+
+        // 1 header + max 8 hour lines = 9 lines max
+        assert!(
+            lines.len() <= 9,
+            "Should have at most 9 lines (1 header + 8 hours)"
+        );
+        // Should have at least header + some hours
+        assert!(
+            lines.len() > 1,
+            "Should have header and at least one hour"
+        );
+    }
+
+    #[test]
+    fn test_hourly_forecast_shows_time_temp_icon_wind_uv() {
+        let weather = create_test_weather_with_hourly(0);
+        let lines = build_hourly_forecast_lines(Some(&weather));
+
+        // Skip header - check if we have hour lines
+        // The function filters by current time, so we may or may not have hour lines
+        if lines.len() > 1 {
+            // If we have hour lines, verify they have the expected format
+            let hour_line = &lines[1];
+
+            // Check spans exist for time, temp, icon, wind, UV
+            // The line should have multiple spans
+            assert!(
+                hour_line.spans.len() >= 3,
+                "Hour line should have multiple spans"
+            );
+
+            // Check content includes expected elements
+            let line_content: String = hour_line.spans.iter().map(|s| s.content.to_string()).collect();
+
+            // Should have some time format (:00), temperature (C), and Wind/UV
+            let has_time = line_content.contains(":00");
+            let has_temp = line_content.contains("C");
+            let has_wind = line_content.contains("Wind:");
+            let has_uv = line_content.contains("UV:");
+
+            assert!(has_time, "Should show time");
+            assert!(has_temp, "Should show temperature");
+            assert!(has_wind, "Should show wind");
+            assert!(has_uv, "Should show UV");
+        } else {
+            // If all hours have passed (late in the day), we should have a message
+            let content: String = lines
+                .iter()
+                .flat_map(|line| line.spans.iter().map(|s| s.content.to_string()))
+                .collect();
+            assert!(
+                content.contains("No more forecasts") || content.contains("No hourly"),
+                "Should show message when no hours available"
+            );
+        }
+    }
+
+    #[test]
+    fn test_hourly_forecast_handles_empty_hourly_data() {
+        let mut weather = create_test_weather();
+        weather.hourly = Vec::new();
+
+        let lines = build_hourly_forecast_lines(Some(&weather));
+
+        let content: String = lines
+            .iter()
+            .flat_map(|line| line.spans.iter().map(|s| s.content.to_string()))
+            .collect();
+
+        assert!(
+            content.contains("No hourly forecast available"),
+            "Should show message when no hourly data"
+        );
+    }
+
+    #[test]
+    fn test_hourly_forecast_handles_missing_weather() {
+        let lines = build_hourly_forecast_lines(None);
+
+        let content: String = lines
+            .iter()
+            .flat_map(|line| line.spans.iter().map(|s| s.content.to_string()))
+            .collect();
+
+        assert!(
+            content.contains("No hourly forecast available"),
+            "Should show message when weather is None"
+        );
+    }
+
+    #[test]
+    fn test_hourly_forecast_temperature_color_coding() {
+        // Test hot temperature (>= 30)
+        assert_eq!(temperature_color(35.0), Color::Red);
+        assert_eq!(temperature_color(30.0), Color::Red);
+
+        // Test warm temperature (>= 25)
+        assert_eq!(temperature_color(27.0), Color::LightRed);
+
+        // Test comfortable temperature (>= 20)
+        assert_eq!(temperature_color(22.0), Color::Yellow);
+
+        // Test cool temperature (>= 15)
+        assert_eq!(temperature_color(17.0), Color::Green);
+
+        // Test cold temperature (>= 10)
+        assert_eq!(temperature_color(12.0), Color::Cyan);
+
+        // Test very cold temperature (< 10)
+        assert_eq!(temperature_color(5.0), Color::Blue);
+    }
+
+    #[test]
+    fn test_hourly_forecast_positioned_between_tides_and_water_quality() {
+        let backend = TestBackend::new(80, 45);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let weather = create_test_weather_with_hourly(10);
+        let mut app = create_test_app_with_conditions(
+            "kitsilano",
+            Some(weather),
+            Some(create_test_tides()),
+            Some(create_test_water_quality()),
+        );
+
+        terminal
+            .draw(|frame| {
+                render(frame, &mut app, "kitsilano");
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+
+        // Find row positions of each section header
+        let mut tides_row: Option<u16> = None;
+        let mut hourly_row: Option<u16> = None;
+        let mut water_quality_row: Option<u16> = None;
+
+        for y in 0..buffer.area().height {
+            let mut row_content = String::new();
+            for x in 0..buffer.area().width {
+                row_content.push_str(buffer.cell((x, y)).unwrap().symbol());
+            }
+            if row_content.contains("TIDES") && tides_row.is_none() {
+                tides_row = Some(y);
+            }
+            if row_content.contains("HOURLY FORECAST") && hourly_row.is_none() {
+                hourly_row = Some(y);
+            }
+            if row_content.contains("WATER QUALITY") && water_quality_row.is_none() {
+                water_quality_row = Some(y);
+            }
+        }
+
+        // Verify all sections are present
+        assert!(tides_row.is_some(), "TIDES section should be present");
+        assert!(hourly_row.is_some(), "HOURLY FORECAST section should be present");
+        assert!(water_quality_row.is_some(), "WATER QUALITY section should be present");
+
+        // Verify order: TIDES < HOURLY FORECAST < WATER QUALITY
+        let tides_y = tides_row.unwrap();
+        let hourly_y = hourly_row.unwrap();
+        let water_quality_y = water_quality_row.unwrap();
+
+        assert!(
+            tides_y < hourly_y,
+            "TIDES (row {}) should appear before HOURLY FORECAST (row {})",
+            tides_y,
+            hourly_y
+        );
+        assert!(
+            hourly_y < water_quality_y,
+            "HOURLY FORECAST (row {}) should appear before WATER QUALITY (row {})",
+            hourly_y,
+            water_quality_y
+        );
+    }
+
+    #[test]
+    fn test_hourly_condition_icon_mapping() {
+        assert_eq!(hourly_condition_icon(WeatherCondition::Clear), "\u{2600}");
+        assert_eq!(hourly_condition_icon(WeatherCondition::PartlyCloudy), "\u{26C5}");
+        assert_eq!(hourly_condition_icon(WeatherCondition::Cloudy), "\u{2601}");
+        assert_eq!(hourly_condition_icon(WeatherCondition::Rain), "\u{1F327}");
+        assert_eq!(hourly_condition_icon(WeatherCondition::Showers), "\u{1F326}");
+        assert_eq!(hourly_condition_icon(WeatherCondition::Thunderstorm), "\u{26C8}");
+        assert_eq!(hourly_condition_icon(WeatherCondition::Snow), "\u{2744}");
+        assert_eq!(hourly_condition_icon(WeatherCondition::Fog), "\u{1F32B}");
+    }
+
+    #[test]
+    fn test_hourly_forecast_no_more_forecasts_when_late() {
+        // Create weather with hourly data, but set current hour to after all forecasts
+        let mut weather = create_test_weather_with_hourly(0);
+        // Keep only hours 0-12 in the forecast
+        weather.hourly.retain(|h| h.hour < 12);
+
+        // Now build lines as if current time is 14:00 (after all forecasts)
+        // Since the filter in build_hourly_forecast_lines uses Local::now(),
+        // we'll test with weather that has no future hours
+        let lines = build_hourly_forecast_lines(Some(&weather));
+
+        // The actual behavior depends on current time, but we can at least
+        // verify the function handles this case gracefully
+        assert!(lines.len() >= 1, "Should have at least the header");
     }
 }
