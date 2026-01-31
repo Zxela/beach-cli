@@ -164,6 +164,10 @@ pub struct TimeSlotScore {
     pub score: u8,
     /// Individual factor scores
     pub factors: ScoreFactors,
+    /// Whether this time slot is blocked due to unsafe conditions
+    pub blocked: bool,
+    /// Reason for blocking, if blocked
+    pub block_reason: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -290,7 +294,127 @@ impl ActivityProfile {
             activity: self.activity,
             score,
             factors,
+            blocked: false,
+            block_reason: None,
         }
+    }
+
+    /// Check weather sanity gates for the activity.
+    ///
+    /// Returns a blocking reason if the weather conditions make this activity
+    /// unsafe or nonsensical, or None if the activity can proceed.
+    ///
+    /// # Arguments
+    ///
+    /// * `temp` - Temperature in Celsius
+    /// * `wind` - Wind speed in km/h
+    /// * `weather_code` - Optional WMO weather code
+    ///
+    /// # Weather Code Reference
+    ///
+    /// - 51-67: Drizzle and rain
+    /// - 71-77: Snow
+    /// - 80-82: Rain showers
+    /// - 95-99: Thunderstorm
+    pub fn check_sanity_gates(&self, temp: f32, wind: f32, weather_code: Option<u8>) -> Option<String> {
+        let code = weather_code.unwrap_or(0);
+
+        // Universal blocks: snow or thunderstorm blocks all activities
+        if (71..=77).contains(&code) {
+            return Some("Snow conditions are unsafe for beach activities".to_string());
+        }
+        if (95..=99).contains(&code) {
+            return Some("Thunderstorm conditions are dangerous".to_string());
+        }
+
+        // Activity-specific blocks
+        match self.activity {
+            Activity::Swimming => {
+                if temp < 15.0 {
+                    return Some(format!("Temperature {:.1}°C is too cold for swimming (minimum 15°C)", temp));
+                }
+                // Rain codes: 51-67 (drizzle/rain), 80-82 (rain showers)
+                if (51..=67).contains(&code) || (80..=82).contains(&code) {
+                    return Some("Rain makes swimming unsafe and unpleasant".to_string());
+                }
+            }
+            Activity::Sunbathing => {
+                if temp < 18.0 {
+                    return Some(format!("Temperature {:.1}°C is too cold for sunbathing (minimum 18°C)", temp));
+                }
+                // Overcast (code 3) or rain
+                if code == 3 {
+                    return Some("Overcast conditions are not suitable for sunbathing".to_string());
+                }
+                if (51..=67).contains(&code) || (80..=82).contains(&code) {
+                    return Some("Rain makes sunbathing impossible".to_string());
+                }
+            }
+            Activity::Sailing => {
+                if wind > 40.0 {
+                    return Some(format!("Wind speed {:.1} km/h is dangerously high for sailing (maximum 40 km/h)", wind));
+                }
+            }
+            Activity::Sunset | Activity::Peace => {
+                // No additional blocks beyond universal ones
+            }
+        }
+
+        None
+    }
+
+    /// Score a time slot with weather code for sanity gate checking.
+    ///
+    /// This method first checks sanity gates and returns a blocked score if
+    /// conditions are unsafe. Otherwise, it delegates to `score_time_slot`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn score_time_slot_with_weather_code(
+        &self,
+        hour: u8,
+        beach_id: &str,
+        temp: f32,
+        wind: f32,
+        uv: f32,
+        water_status: WaterStatus,
+        tide_height: f32,
+        max_tide: f32,
+        crowd_level: f32,
+        weather_code: Option<u8>,
+    ) -> TimeSlotScore {
+        // Check sanity gates first
+        if let Some(reason) = self.check_sanity_gates(temp, wind, weather_code) {
+            // Return a blocked score
+            return TimeSlotScore {
+                hour,
+                beach_id: beach_id.to_string(),
+                activity: self.activity,
+                score: 0,
+                factors: ScoreFactors {
+                    temperature: 0.0,
+                    water_quality: 0.0,
+                    wind: 0.0,
+                    uv: 0.0,
+                    tide: 0.0,
+                    crowd: 0.0,
+                    time_of_day: 0.0,
+                },
+                blocked: true,
+                block_reason: Some(reason),
+            };
+        }
+
+        // Not blocked, use regular scoring
+        self.score_time_slot(
+            hour,
+            beach_id,
+            temp,
+            wind,
+            uv,
+            water_status,
+            tide_height,
+            max_tide,
+            crowd_level,
+        )
     }
 }
 
@@ -951,5 +1075,196 @@ mod tests {
 
         // Verify hour 23 scores 0.5 (2 hours after)
         assert_eq!(sunset_time_scorer_dynamic(23, sunset_hour), 0.5);
+    }
+
+    // ========================================================================
+    // Weather Sanity Gates Tests
+    // ========================================================================
+
+    #[test]
+    fn test_swimming_blocked_when_raining() {
+        let profile = get_profile(Activity::Swimming);
+        let score = profile.score_time_slot_with_weather_code(
+            12, "test", 24.0, 5.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.3, Some(61),
+        );
+        assert_eq!(score.score, 0);
+        assert!(score.blocked);
+    }
+
+    #[test]
+    fn test_swimming_blocked_when_cold() {
+        let profile = get_profile(Activity::Swimming);
+        let score = profile.score_time_slot_with_weather_code(
+            12, "test", 12.0, 5.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.3, Some(0),
+        );
+        assert_eq!(score.score, 0);
+        assert!(score.blocked);
+    }
+
+    #[test]
+    fn test_sunbathing_blocked_when_overcast() {
+        let profile = get_profile(Activity::Sunbathing);
+        let score = profile.score_time_slot_with_weather_code(
+            12, "test", 25.0, 5.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.3, Some(3),
+        );
+        assert_eq!(score.score, 0);
+        assert!(score.blocked);
+    }
+
+    #[test]
+    fn test_sailing_blocked_when_dangerous_wind() {
+        let profile = get_profile(Activity::Sailing);
+        let score = profile.score_time_slot_with_weather_code(
+            12, "test", 20.0, 45.0, 3.0, WaterStatus::Safe, 4.0, 4.8, 0.3, Some(0),
+        );
+        assert_eq!(score.score, 0);
+        assert!(score.blocked);
+    }
+
+    #[test]
+    fn test_all_activities_blocked_during_thunderstorm() {
+        for activity in Activity::all() {
+            let profile = get_profile(*activity);
+            let score = profile.score_time_slot_with_weather_code(
+                12, "test", 25.0, 10.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.3, Some(95),
+            );
+            assert_eq!(score.score, 0, "Activity {:?} should be blocked during thunderstorm", activity);
+            assert!(score.blocked, "Activity {:?} should be blocked during thunderstorm", activity);
+            assert!(score.block_reason.as_ref().unwrap().contains("Thunderstorm"),
+                "Activity {:?} block reason should mention thunderstorm", activity);
+        }
+    }
+
+    #[test]
+    fn test_all_activities_blocked_during_snow() {
+        for activity in Activity::all() {
+            let profile = get_profile(*activity);
+            let score = profile.score_time_slot_with_weather_code(
+                12, "test", 0.0, 10.0, 2.0, WaterStatus::Safe, 2.4, 4.8, 0.3, Some(73),
+            );
+            assert_eq!(score.score, 0, "Activity {:?} should be blocked during snow", activity);
+            assert!(score.blocked, "Activity {:?} should be blocked during snow", activity);
+            assert!(score.block_reason.as_ref().unwrap().contains("Snow"),
+                "Activity {:?} block reason should mention snow", activity);
+        }
+    }
+
+    #[test]
+    fn test_swimming_not_blocked_when_conditions_good() {
+        let profile = get_profile(Activity::Swimming);
+        let score = profile.score_time_slot_with_weather_code(
+            12, "test", 24.0, 5.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.3, Some(0),
+        );
+        assert!(!score.blocked);
+        assert!(score.block_reason.is_none());
+        assert!(score.score > 0);
+    }
+
+    #[test]
+    fn test_sunbathing_blocked_when_raining() {
+        let profile = get_profile(Activity::Sunbathing);
+        let score = profile.score_time_slot_with_weather_code(
+            12, "test", 25.0, 5.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.3, Some(61),
+        );
+        assert_eq!(score.score, 0);
+        assert!(score.blocked);
+        assert!(score.block_reason.as_ref().unwrap().contains("Rain"));
+    }
+
+    #[test]
+    fn test_sunbathing_blocked_when_cold() {
+        let profile = get_profile(Activity::Sunbathing);
+        let score = profile.score_time_slot_with_weather_code(
+            12, "test", 15.0, 5.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.3, Some(0),
+        );
+        assert_eq!(score.score, 0);
+        assert!(score.blocked);
+        assert!(score.block_reason.as_ref().unwrap().contains("cold"));
+    }
+
+    #[test]
+    fn test_sailing_not_blocked_with_moderate_wind() {
+        let profile = get_profile(Activity::Sailing);
+        let score = profile.score_time_slot_with_weather_code(
+            12, "test", 20.0, 20.0, 3.0, WaterStatus::Safe, 4.0, 4.8, 0.3, Some(0),
+        );
+        assert!(!score.blocked);
+        assert!(score.block_reason.is_none());
+        assert!(score.score > 0);
+    }
+
+    #[test]
+    fn test_sanity_gate_block_reason_contains_temperature() {
+        let profile = get_profile(Activity::Swimming);
+        let score = profile.score_time_slot_with_weather_code(
+            12, "test", 10.0, 5.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.3, Some(0),
+        );
+        assert!(score.block_reason.as_ref().unwrap().contains("10.0"));
+    }
+
+    #[test]
+    fn test_sanity_gate_block_reason_contains_wind_speed() {
+        let profile = get_profile(Activity::Sailing);
+        let score = profile.score_time_slot_with_weather_code(
+            12, "test", 20.0, 50.0, 3.0, WaterStatus::Safe, 4.0, 4.8, 0.3, Some(0),
+        );
+        assert!(score.block_reason.as_ref().unwrap().contains("50.0"));
+    }
+
+    #[test]
+    fn test_peace_activity_not_blocked_by_cold_or_wind() {
+        let profile = get_profile(Activity::Peace);
+        // Peace activity should work in cold weather and high wind (unless thunderstorm/snow)
+        let score = profile.score_time_slot_with_weather_code(
+            12, "test", 5.0, 35.0, 2.0, WaterStatus::Safe, 2.4, 4.8, 0.1, Some(0),
+        );
+        assert!(!score.blocked);
+        assert!(score.score > 0);
+    }
+
+    #[test]
+    fn test_sunset_activity_not_blocked_by_cold_or_wind() {
+        let profile = get_profile(Activity::Sunset);
+        // Sunset activity should work in cold weather and high wind (unless thunderstorm/snow)
+        let score = profile.score_time_slot_with_weather_code(
+            19, "test", 5.0, 35.0, 2.0, WaterStatus::Safe, 2.4, 4.8, 0.1, Some(0),
+        );
+        assert!(!score.blocked);
+        assert!(score.score > 0);
+    }
+
+    #[test]
+    fn test_score_time_slot_sets_blocked_false() {
+        // Verify that the original score_time_slot method sets blocked=false
+        let profile = get_profile(Activity::Swimming);
+        let score = profile.score_time_slot(
+            12, "test", 24.0, 5.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.3,
+        );
+        assert!(!score.blocked);
+        assert!(score.block_reason.is_none());
+    }
+
+    #[test]
+    fn test_swimming_blocked_with_rain_shower_codes() {
+        let profile = get_profile(Activity::Swimming);
+        // Test rain shower codes 80-82
+        for code in 80..=82 {
+            let score = profile.score_time_slot_with_weather_code(
+                12, "test", 24.0, 5.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.3, Some(code),
+            );
+            assert!(score.blocked, "Swimming should be blocked with weather code {}", code);
+        }
+    }
+
+    #[test]
+    fn test_swimming_blocked_with_drizzle_codes() {
+        let profile = get_profile(Activity::Swimming);
+        // Test drizzle/rain codes 51-67
+        for code in [51, 53, 55, 61, 63, 65, 67] {
+            let score = profile.score_time_slot_with_weather_code(
+                12, "test", 24.0, 5.0, 5.0, WaterStatus::Safe, 2.4, 4.8, 0.3, Some(code),
+            );
+            assert!(score.blocked, "Swimming should be blocked with weather code {}", code);
+        }
     }
 }
