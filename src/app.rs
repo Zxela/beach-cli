@@ -433,6 +433,104 @@ impl App {
         self.selected_beach()
             .and_then(|beach| self.beach_conditions.get(beach.id))
     }
+
+    /// Finds the best beach for the current activity right now
+    ///
+    /// Returns the best beach with a score >= 70, or None if no good options exist.
+    pub fn find_best_beach_now(&self) -> Option<BestBeachNow> {
+        use crate::activities::get_profile;
+        use crate::crowd::estimate_crowd;
+        use chrono::{Datelike, Timelike};
+
+        let activity = self.current_activity?;
+        let now = chrono::Local::now();
+        let current_hour = now.hour() as u8;
+
+        let profile = get_profile(activity);
+        let beaches = all_beaches();
+
+        let mut best: Option<BestBeachNow> = None;
+        let mut best_score: u8 = 70; // Minimum threshold
+
+        for beach in beaches {
+            let conditions = self.beach_conditions.get(beach.id)?;
+
+            // Skip if water quality is stale for swimming
+            if activity == crate::activities::Activity::Swimming {
+                if let Some(wq) = &conditions.water_quality {
+                    if wq.is_stale() {
+                        continue;
+                    }
+                }
+            }
+
+            let weather = conditions.weather.as_ref()?;
+            let temp = weather.temperature as f32;
+            let wind = weather.wind as f32;
+            let uv = weather.uv as f32;
+
+            let water_status = conditions
+                .water_quality
+                .as_ref()
+                .map(|wq| wq.effective_status())
+                .unwrap_or(crate::data::WaterStatus::Unknown);
+
+            let (tide_height, max_tide) = conditions
+                .tides
+                .as_ref()
+                .map(|t| (t.current_height as f32, 4.8f32))
+                .unwrap_or((2.4, 4.8));
+
+            let crowd = estimate_crowd(now.month(), now.weekday(), now.hour());
+
+            let score_result = profile.score_time_slot(
+                current_hour,
+                beach.id,
+                temp,
+                wind,
+                uv,
+                water_status,
+                tide_height,
+                max_tide,
+                crowd,
+            );
+
+            if score_result.score > best_score {
+                best_score = score_result.score;
+
+                let mut reasons = Vec::new();
+                reasons.push(format!("{:.0}°C", temp));
+                if wind < 10.0 {
+                    reasons.push("calm winds".to_string());
+                }
+                if water_status == crate::data::WaterStatus::Safe {
+                    reasons.push("safe water".to_string());
+                }
+
+                best = Some(BestBeachNow {
+                    beach_name: beach.name.to_string(),
+                    beach_id: beach.id.to_string(),
+                    score: score_result.score,
+                    reasons,
+                });
+            }
+        }
+
+        best
+    }
+}
+
+/// Information about the best beach right now
+#[derive(Debug, Clone)]
+pub struct BestBeachNow {
+    /// Name of the beach
+    pub beach_name: String,
+    /// ID of the beach
+    pub beach_id: String,
+    /// Activity score (0-100)
+    pub score: u8,
+    /// Reasons why this beach is recommended
+    pub reasons: Vec<String>,
 }
 
 impl Default for App {
@@ -1075,5 +1173,23 @@ mod tests {
     fn test_app_new_has_pending_plan_trip_false() {
         let app = App::new();
         assert!(!app.pending_plan_trip);
+    }
+
+    // ========================================================================
+    // find_best_beach_now Tests (Task 5)
+    // ========================================================================
+
+    #[test]
+    fn test_find_best_beach_now_returns_none_without_activity() {
+        let app = App::new();
+        assert!(app.find_best_beach_now().is_none());
+    }
+
+    #[test]
+    fn test_find_best_beach_now_returns_none_without_data() {
+        let mut app = App::new();
+        app.current_activity = Some(Activity::Swimming);
+        // No beach conditions loaded, should return None
+        assert!(app.find_best_beach_now().is_none());
     }
 }
