@@ -244,8 +244,8 @@ pub fn render_beach_list(frame: &mut Frame, app: &App) {
     // Render the beach list
     render_list(frame, app, chunks[1]);
 
-    // Render help text
-    render_help(frame, chunks[2]);
+    // Render help text with data freshness
+    render_help(frame, chunks[2], app);
 }
 
 /// Renders the smart header with time, weather, recommendation, and sunset info
@@ -468,19 +468,34 @@ fn render_list(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-/// Renders the help text at the bottom of the screen
-fn render_help(frame: &mut Frame, area: Rect) {
-    let help_text = Line::from(vec![
-        Span::styled("\u{2191}/\u{2193}", Style::default().fg(Color::Yellow)), // ↑/↓
+/// Renders the help text at the bottom of the screen with data freshness
+fn render_help(frame: &mut Frame, area: Rect, app: &App) {
+    let mut help_spans = vec![
+        Span::styled("↑/↓", Style::default().fg(Color::Yellow)),
         Span::raw(" Navigate  "),
         Span::styled("Enter", Style::default().fg(Color::Yellow)),
         Span::raw(" Select  "),
-        Span::styled("r", Style::default().fg(Color::Yellow)),
-        Span::raw(" Refresh  "),
+        Span::styled("1-5", Style::default().fg(Color::Yellow)),
+        Span::raw(" Activity  "),
         Span::styled("q", Style::default().fg(Color::Yellow)),
         Span::raw(" Quit"),
-    ]);
+    ];
 
+    // Add data freshness indicator
+    if let Some(last_refresh) = app.last_refresh {
+        let elapsed = Local::now() - last_refresh;
+        let mins_ago = elapsed.num_minutes();
+        let freshness_text = if mins_ago < 1 {
+            " │ Data: just now".to_string()
+        } else if mins_ago < 60 {
+            format!(" │ Data: {}m ago", mins_ago)
+        } else {
+            format!(" │ Data: {}h ago", elapsed.num_hours())
+        };
+        help_spans.push(Span::styled(freshness_text, Style::default().fg(Color::DarkGray)));
+    }
+
+    let help_text = Line::from(help_spans);
     let paragraph = Paragraph::new(help_text).style(Style::default().fg(Color::DarkGray));
 
     frame.render_widget(paragraph, area);

@@ -3,6 +3,7 @@
 //! This module contains the main application state, handling keyboard input,
 //! data loading, and state transitions between different views.
 
+use chrono::{DateTime, Local};
 use crossterm::event::{KeyCode, KeyEvent};
 use std::collections::HashMap;
 
@@ -45,6 +46,8 @@ pub struct App {
     pub plan_time_range: (u8, u8),
     /// Flag to transition to PlanTrip after data loads (from --plan CLI flag)
     pub pending_plan_trip: bool,
+    /// Timestamp of last data refresh
+    pub last_refresh: Option<DateTime<Local>>,
     /// Weather API client
     weather_client: WeatherClient,
     /// Tides API client
@@ -66,6 +69,7 @@ impl App {
             plan_cursor: (0, 0),
             plan_time_range: (6, 21),
             pending_plan_trip: false,
+            last_refresh: None,
             weather_client: WeatherClient::new(),
             tides_client: TidesClient::new(cache.clone()),
             water_quality_client: cache
@@ -111,6 +115,7 @@ impl App {
             plan_cursor: (0, 0),
             plan_time_range: (6, 21),
             pending_plan_trip: false,
+            last_refresh: None,
             weather_client,
             tides_client,
             water_quality_client,
@@ -186,6 +191,9 @@ impl App {
             self.beach_conditions
                 .insert(beach.id.to_string(), conditions);
         }
+
+        // Record refresh time
+        self.last_refresh = Some(Local::now());
 
         // Transition to appropriate state based on startup config
         if self.pending_plan_trip {
