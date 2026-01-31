@@ -12,7 +12,7 @@ pub use beach::{all_beaches, get_beach_by_id};
 pub use tides::TidesClient;
 pub use water_quality::{WaterQualityClient, WaterQualityError};
 #[allow(unused_imports)]
-pub use weather::{HourlyForecast, WeatherClient, WeatherData, WeatherError};
+pub use weather::{ApiHourlyForecast, WeatherClient, WeatherData, WeatherError};
 
 use chrono::{DateTime, Local, NaiveDate, NaiveTime, Timelike, Utc};
 use serde::{Deserialize, Serialize};
@@ -40,6 +40,27 @@ pub struct Beach {
     pub water_quality_id: Option<&'static str>,
 }
 
+/// Hourly weather forecast data for a single hour
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HourlyForecast {
+    /// Hour of the day (0-23)
+    pub hour: u8,
+    /// Temperature in Celsius
+    pub temperature: f64,
+    /// Feels-like temperature in Celsius
+    pub feels_like: f64,
+    /// Weather condition
+    pub condition: WeatherCondition,
+    /// Wind speed in km/h
+    pub wind: f64,
+    /// Wind direction (e.g., "N", "NE", "SW")
+    pub wind_direction: String,
+    /// UV index
+    pub uv: f64,
+    /// Precipitation chance percentage (0-100)
+    pub precipitation_chance: u8,
+}
+
 /// Weather conditions at a specific time
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Weather {
@@ -61,6 +82,9 @@ pub struct Weather {
     pub sunset: NaiveTime,
     /// When this data was fetched
     pub fetched_at: DateTime<Utc>,
+    /// Hourly forecasts for today
+    #[serde(default)]
+    pub hourly: Vec<HourlyForecast>,
 }
 
 /// Types of weather conditions
@@ -241,6 +265,7 @@ mod tests {
             sunrise: NaiveTime::from_hms_opt(5, 30, 0).unwrap(),
             sunset: NaiveTime::from_hms_opt(21, 15, 0).unwrap(),
             fetched_at: Utc::now(),
+            hourly: Vec::new(),
         };
 
         // Serialize to JSON
@@ -509,5 +534,162 @@ mod tests {
                 height
             );
         }
+    }
+
+    #[test]
+    fn test_hourly_forecast_creation() {
+        let forecast = HourlyForecast {
+            hour: 14,
+            temperature: 22.5,
+            feels_like: 24.0,
+            condition: WeatherCondition::PartlyCloudy,
+            wind: 12.5,
+            wind_direction: "NW".to_string(),
+            uv: 6.0,
+            precipitation_chance: 20,
+        };
+
+        assert_eq!(forecast.hour, 14);
+        assert!((forecast.temperature - 22.5).abs() < 0.01);
+        assert!((forecast.feels_like - 24.0).abs() < 0.01);
+        assert_eq!(forecast.condition, WeatherCondition::PartlyCloudy);
+        assert!((forecast.wind - 12.5).abs() < 0.01);
+        assert_eq!(forecast.wind_direction, "NW");
+        assert!((forecast.uv - 6.0).abs() < 0.01);
+        assert_eq!(forecast.precipitation_chance, 20);
+    }
+
+    #[test]
+    fn test_hourly_forecast_serialization_roundtrip() {
+        let forecast = HourlyForecast {
+            hour: 9,
+            temperature: 18.0,
+            feels_like: 17.5,
+            condition: WeatherCondition::Clear,
+            wind: 8.0,
+            wind_direction: "E".to_string(),
+            uv: 3.0,
+            precipitation_chance: 0,
+        };
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&forecast).expect("Failed to serialize HourlyForecast");
+
+        // Deserialize back
+        let deserialized: HourlyForecast =
+            serde_json::from_str(&json).expect("Failed to deserialize HourlyForecast");
+
+        assert_eq!(deserialized.hour, forecast.hour);
+        assert!((deserialized.temperature - 18.0).abs() < 0.01);
+        assert!((deserialized.feels_like - 17.5).abs() < 0.01);
+        assert_eq!(deserialized.condition, WeatherCondition::Clear);
+        assert!((deserialized.wind - 8.0).abs() < 0.01);
+        assert_eq!(deserialized.wind_direction, "E");
+        assert!((deserialized.uv - 3.0).abs() < 0.01);
+        assert_eq!(deserialized.precipitation_chance, 0);
+    }
+
+    #[test]
+    fn test_weather_with_hourly_forecasts() {
+        let hourly_forecasts = vec![
+            HourlyForecast {
+                hour: 10,
+                temperature: 20.0,
+                feels_like: 21.0,
+                condition: WeatherCondition::Clear,
+                wind: 10.0,
+                wind_direction: "N".to_string(),
+                uv: 5.0,
+                precipitation_chance: 0,
+            },
+            HourlyForecast {
+                hour: 11,
+                temperature: 22.0,
+                feels_like: 23.0,
+                condition: WeatherCondition::PartlyCloudy,
+                wind: 12.0,
+                wind_direction: "NE".to_string(),
+                uv: 6.0,
+                precipitation_chance: 10,
+            },
+        ];
+
+        let weather = Weather {
+            temperature: 20.0,
+            feels_like: 21.0,
+            condition: WeatherCondition::Clear,
+            humidity: 60,
+            wind: 10.0,
+            uv: 5.0,
+            sunrise: NaiveTime::from_hms_opt(6, 0, 0).unwrap(),
+            sunset: NaiveTime::from_hms_opt(20, 30, 0).unwrap(),
+            fetched_at: Utc::now(),
+            hourly: hourly_forecasts,
+        };
+
+        assert_eq!(weather.hourly.len(), 2);
+        assert_eq!(weather.hourly[0].hour, 10);
+        assert_eq!(weather.hourly[1].hour, 11);
+    }
+
+    #[test]
+    fn test_weather_with_hourly_serialization_roundtrip() {
+        let weather = Weather {
+            temperature: 22.5,
+            feels_like: 24.0,
+            condition: WeatherCondition::PartlyCloudy,
+            humidity: 65,
+            wind: 12.5,
+            uv: 6.0,
+            sunrise: NaiveTime::from_hms_opt(5, 30, 0).unwrap(),
+            sunset: NaiveTime::from_hms_opt(21, 15, 0).unwrap(),
+            fetched_at: Utc::now(),
+            hourly: vec![HourlyForecast {
+                hour: 14,
+                temperature: 24.0,
+                feels_like: 25.0,
+                condition: WeatherCondition::Clear,
+                wind: 10.0,
+                wind_direction: "SW".to_string(),
+                uv: 7.0,
+                precipitation_chance: 5,
+            }],
+        };
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&weather).expect("Failed to serialize Weather with hourly");
+
+        // Deserialize back
+        let deserialized: Weather =
+            serde_json::from_str(&json).expect("Failed to deserialize Weather with hourly");
+
+        assert!((deserialized.temperature - 22.5).abs() < 0.01);
+        assert_eq!(deserialized.hourly.len(), 1);
+        assert_eq!(deserialized.hourly[0].hour, 14);
+        assert!((deserialized.hourly[0].temperature - 24.0).abs() < 0.01);
+        assert_eq!(deserialized.hourly[0].wind_direction, "SW");
+    }
+
+    #[test]
+    fn test_weather_hourly_default_backwards_compat() {
+        // Test that Weather can be deserialized without hourly field (backwards compatibility)
+        let json_without_hourly = r#"{
+            "temperature": 22.5,
+            "feels_like": 24.0,
+            "condition": "PartlyCloudy",
+            "humidity": 65,
+            "wind": 12.5,
+            "uv": 6.0,
+            "sunrise": "05:30:00",
+            "sunset": "21:15:00",
+            "fetched_at": "2024-07-15T14:00:00Z"
+        }"#;
+
+        let weather: Weather = serde_json::from_str(json_without_hourly)
+            .expect("Failed to deserialize Weather without hourly field");
+
+        // hourly should default to empty vec
+        assert!(weather.hourly.is_empty());
+        assert!((weather.temperature - 22.5).abs() < 0.01);
     }
 }

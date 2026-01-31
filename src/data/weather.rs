@@ -13,10 +13,10 @@ use super::{Weather, WeatherCondition};
 /// Base URL for the Open-Meteo API
 const OPEN_METEO_BASE_URL: &str = "https://api.open-meteo.com/v1/forecast";
 
-/// Hourly weather forecast data for a single hour
+/// Hourly weather forecast data from Open-Meteo API (internal structure)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)]
-pub struct HourlyForecast {
+pub struct ApiHourlyForecast {
     /// Time of the forecast
     pub time: NaiveDateTime,
     /// Temperature in Celsius
@@ -36,7 +36,7 @@ pub struct WeatherData {
     /// Current weather conditions
     pub current: Weather,
     /// Hourly forecasts for the next 48 hours
-    pub hourly: Vec<HourlyForecast>,
+    pub hourly: Vec<ApiHourlyForecast>,
 }
 
 /// Errors that can occur when fetching weather data
@@ -191,6 +191,7 @@ impl WeatherClient {
             sunrise,
             sunset,
             fetched_at: Utc::now(),
+            hourly: Vec::new(),
         })
     }
 
@@ -243,6 +244,7 @@ impl WeatherClient {
             sunrise,
             sunset,
             fetched_at: Utc::now(),
+            hourly: Vec::new(),
         };
 
         // Parse hourly forecasts
@@ -254,11 +256,11 @@ impl WeatherClient {
         })
     }
 
-    /// Parse hourly weather data arrays into HourlyForecast structs
+    /// Parse hourly weather data arrays into ApiHourlyForecast structs
     fn parse_hourly_data(
         &self,
         hourly: &HourlyWeather,
-    ) -> Result<Vec<HourlyForecast>, WeatherError> {
+    ) -> Result<Vec<ApiHourlyForecast>, WeatherError> {
         let len = hourly.time.len();
 
         // Validate that all arrays have the same length
@@ -276,7 +278,7 @@ impl WeatherClient {
 
         for i in 0..len {
             let time = parse_datetime(&hourly.time[i])?;
-            forecasts.push(HourlyForecast {
+            forecasts.push(ApiHourlyForecast {
                 time,
                 temperature: hourly.temperature_2m[i],
                 weather_code: hourly.weathercode[i],
@@ -818,8 +820,8 @@ mod tests {
     }
 
     #[test]
-    fn test_hourly_forecast_serialization() {
-        let forecast = HourlyForecast {
+    fn test_api_hourly_forecast_serialization() {
+        let forecast = ApiHourlyForecast {
             time: NaiveDateTime::parse_from_str("2024-07-15T14:00", "%Y-%m-%dT%H:%M").unwrap(),
             temperature: 22.5,
             weather_code: 2,
@@ -828,11 +830,11 @@ mod tests {
         };
 
         // Serialize to JSON
-        let json = serde_json::to_string(&forecast).expect("Failed to serialize HourlyForecast");
+        let json = serde_json::to_string(&forecast).expect("Failed to serialize ApiHourlyForecast");
 
         // Deserialize back
-        let deserialized: HourlyForecast =
-            serde_json::from_str(&json).expect("Failed to deserialize HourlyForecast");
+        let deserialized: ApiHourlyForecast =
+            serde_json::from_str(&json).expect("Failed to deserialize ApiHourlyForecast");
 
         assert_eq!(deserialized.time, forecast.time);
         assert!((deserialized.temperature - 22.5).abs() < 0.01);
@@ -854,8 +856,9 @@ mod tests {
                 sunrise: NaiveTime::from_hms_opt(5, 30, 0).unwrap(),
                 sunset: NaiveTime::from_hms_opt(21, 15, 0).unwrap(),
                 fetched_at: Utc::now(),
+                hourly: Vec::new(),
             },
-            hourly: vec![HourlyForecast {
+            hourly: vec![ApiHourlyForecast {
                 time: NaiveDateTime::parse_from_str("2024-07-15T14:00", "%Y-%m-%dT%H:%M").unwrap(),
                 temperature: 22.5,
                 weather_code: 2,

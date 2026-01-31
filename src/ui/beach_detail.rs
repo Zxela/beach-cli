@@ -1017,6 +1017,7 @@ mod tests {
             sunrise: NaiveTime::from_hms_opt(5, 30, 0).unwrap(),
             sunset: NaiveTime::from_hms_opt(21, 15, 0).unwrap(),
             fetched_at: Utc::now(),
+            hourly: Vec::new(),
         }
     }
 
@@ -1313,6 +1314,7 @@ mod tests {
             sunrise: NaiveTime::from_hms_opt(6, 0, 0).unwrap(),
             sunset: NaiveTime::from_hms_opt(sunset_hour as u32, sunset_minute as u32, 0).unwrap(),
             fetched_at: Utc::now(),
+            hourly: Vec::new(),
         };
 
         let tides = TideInfo {

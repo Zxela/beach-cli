@@ -672,6 +672,7 @@ mod tests {
             sunrise: NaiveTime::from_hms_opt(5, 30, 0).unwrap(),
             sunset: NaiveTime::from_hms_opt(21, 0, 0).unwrap(),
             fetched_at: Utc::now(),
+            hourly: Vec::new(),
         }
     }
 
