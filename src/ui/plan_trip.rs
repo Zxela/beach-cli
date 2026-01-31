@@ -45,6 +45,9 @@ const BLOCK_GOOD: &str = "\u{2593}\u{2593}"; // ▓▓
 const BLOCK_FAIR: &str = "\u{2592}\u{2592}"; // ▒▒
 const BLOCK_POOR: &str = "\u{2591}\u{2591}"; // ░░
 
+/// Tide block characters (8 levels)
+const TIDE_BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
 /// Returns the block character and color for a given score
 fn score_to_block(score: u8) -> (&'static str, Color) {
     match score {
@@ -53,6 +56,28 @@ fn score_to_block(score: u8) -> (&'static str, Color) {
         40..=59 => (BLOCK_FAIR, colors::FAIR),
         20..=39 => (BLOCK_POOR, colors::POOR),
         _ => (BLOCK_POOR, colors::BAD),
+    }
+}
+
+/// Converts a tide height to a block character
+fn height_to_tide_char(height: f64, max_height: f64) -> char {
+    let normalized = (height / max_height).clamp(0.0, 1.0);
+    let index = ((normalized * 7.0).round() as usize).min(7);
+    TIDE_BLOCKS[index]
+}
+
+/// Gets the tide height for a specific hour
+fn get_tide_height_at_hour(app: &App, beach_id: &str, hour: u8) -> Option<f64> {
+    let conditions = app.get_conditions(beach_id)?;
+    let tides = conditions.tides.as_ref()?;
+    let heights = tides.hourly_heights(4.8);
+
+    // Map hour (6-21) to index (0-15)
+    if hour >= 6 && hour <= 21 {
+        let index = (hour - 6) as usize;
+        heights.get(index).copied()
+    } else {
+        None
     }
 }
 
@@ -275,7 +300,7 @@ fn render_heatmap_grid(frame: &mut Frame, area: Rect, app: &App) {
 
     // Calculate column widths
     let beach_name_width = 12; // Truncate beach names to fit
-    let cell_width = 5; // Width for each hour cell
+    let cell_width = 6; // Width for each hour cell (tide char + score blocks + space)
 
     let mut lines: Vec<Line> = Vec::new();
 
@@ -321,10 +346,16 @@ fn render_heatmap_grid(frame: &mut Frame, area: Rect, app: &App) {
             let score = compute_score(app, beach.id, *hour);
             let (block_char, block_color) = score_to_block(score);
 
+            // Get tide indicator for this hour
+            let tide_char = get_tide_height_at_hour(app, beach.id, *hour)
+                .map(|h| height_to_tide_char(h, 4.8))
+                .unwrap_or(' ');
+
+            // Include tide indicator in cell
             let cell_content = if is_cursor {
-                format!("[{}]", block_char)
+                format!("[{}{}]", tide_char, block_char)
             } else {
-                format!(" {} ", block_char)
+                format!("{}{} ", tide_char, block_char)
             };
 
             let cell_style = if is_cursor {
@@ -350,19 +381,21 @@ fn render_legend(frame: &mut Frame, area: Rect) {
     let legend_line = Line::from(vec![
         Span::styled("Legend: ", Style::default().fg(colors::SECONDARY)),
         Span::styled(BLOCK_EXCELLENT, Style::default().fg(colors::EXCELLENT)),
-        Span::styled(" Excellent (80+)  ", Style::default().fg(colors::SECONDARY)),
+        Span::styled(" 80+  ", Style::default().fg(colors::SECONDARY)),
         Span::styled(BLOCK_GOOD, Style::default().fg(colors::GOOD)),
-        Span::styled(" Good (60-79)  ", Style::default().fg(colors::SECONDARY)),
+        Span::styled(" 60-79  ", Style::default().fg(colors::SECONDARY)),
         Span::styled(BLOCK_FAIR, Style::default().fg(colors::FAIR)),
-        Span::styled(" Fair (40-59)  ", Style::default().fg(colors::SECONDARY)),
+        Span::styled(" 40-59  ", Style::default().fg(colors::SECONDARY)),
         Span::styled(BLOCK_POOR, Style::default().fg(colors::POOR)),
-        Span::styled(" Poor (<40)", Style::default().fg(colors::SECONDARY)),
+        Span::styled(" <40", Style::default().fg(colors::SECONDARY)),
     ]);
 
     let cursor_line = Line::from(vec![
         Span::styled("        ", Style::default()),
         Span::styled("[ ]", Style::default().fg(colors::PRIMARY)),
-        Span::styled(" Cursor", Style::default().fg(colors::SECONDARY)),
+        Span::styled(" Cursor  ", Style::default().fg(colors::SECONDARY)),
+        Span::styled("▁▃▅▇", Style::default().fg(Color::Cyan)),
+        Span::styled(" Tide height", Style::default().fg(colors::SECONDARY)),
     ]);
 
     let paragraph = Paragraph::new(vec![legend_line, cursor_line]);
