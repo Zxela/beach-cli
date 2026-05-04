@@ -14,7 +14,7 @@ TARGETS := x86_64-unknown-linux-gnu \
 
 .PHONY: all build build-release test clean install uninstall \
         release release-build release-package release-upload \
-        lint fmt check help
+        lint fmt check help homebrew-sha
 
 all: build
 
@@ -188,3 +188,12 @@ help: ## Show this help
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+
+homebrew-sha: ## Print SHA256 for release tarballs (used for Homebrew formula updates)
+	@mkdir -p dist
+	@for target in $(TARGETS); do \
+		file="dist/$(BINARY_NAME)-$(VERSION)-$$target.tar.gz"; \
+		if [ -f "$$file" ]; then \
+			printf "%-55s %s\n" "$$target" "$$(shasum -a 256 "$$file" | awk '{print $$1}')"; \
+		fi; \
+	done
