@@ -14,6 +14,20 @@ A terminal UI application to view Vancouver beach conditions including weather, 
 
 ## Installation
 
+### Homebrew (macOS/Linux)
+
+```sh
+brew tap Zxela/tap
+brew install vanbeach
+```
+
+To upgrade:
+
+```sh
+brew update
+brew upgrade vanbeach
+```
+
 ### Quick Install (Linux/macOS)
 
 ```sh
@@ -110,6 +124,16 @@ This will:
 3. Commit and push to main
 4. Create and push a git tag
 5. GitHub Actions builds binaries for all platforms and creates a release
+
+### Homebrew Formula Maintenance
+
+Homebrew installations are published via a separate tap repository (`Zxela/homebrew-tap`).
+
+Each tagged release now publishes:
+- `checksums.txt` (SHA256 for all tarballs)
+- `vanbeach.rb` (a pre-generated Homebrew formula template)
+
+Use those release artifacts to quickly update `Zxela/homebrew-tap`.
 
 ### Supported Platforms
 

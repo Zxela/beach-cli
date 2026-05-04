@@ -90,6 +90,63 @@ jobs:
           find artifacts -name '*.tar.gz' -exec mv {} release/ \;
           ls -la release/
 
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum *.tar.gz > checksums.txt
+          cat checksums.txt
+          cd ..
+
+      - name: Generate Homebrew formula template
+        env:
+          REPO: Zxela/beach-cli
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BASE_URL="https://github.com/${REPO}/releases/download/${GITHUB_REF_NAME}"
+          DARWIN_ARM_SHA=$(awk '/aarch64-apple-darwin.tar.gz$/ {print $1}' release/checksums.txt)
+          DARWIN_X86_SHA=$(awk '/x86_64-apple-darwin.tar.gz$/ {print $1}' release/checksums.txt)
+          LINUX_ARM_SHA=$(awk '/aarch64-unknown-linux-gnu.tar.gz$/ {print $1}' release/checksums.txt)
+          LINUX_X86_SHA=$(awk '/x86_64-unknown-linux-gnu.tar.gz$/ {print $1}' release/checksums.txt)
+          MUSL_X86_SHA=$(awk '/x86_64-unknown-linux-musl.tar.gz$/ {print $1}' release/checksums.txt)
+
+          cat > release/vanbeach.rb <<EOF
+          class Vanbeach < Formula
+            desc "Terminal UI for Vancouver beach conditions"
+            homepage "https://github.com/${REPO}"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "${BASE_URL}/vanbeach-aarch64-apple-darwin.tar.gz"
+                sha256 "${DARWIN_ARM_SHA}"
+              else
+                url "${BASE_URL}/vanbeach-x86_64-apple-darwin.tar.gz"
+                sha256 "${DARWIN_X86_SHA}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "${BASE_URL}/vanbeach-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "${LINUX_ARM_SHA}"
+              elsif ENV["HOMEBREW_LINUX_MUSL"] == "1"
+                url "${BASE_URL}/vanbeach-x86_64-unknown-linux-musl.tar.gz"
+                sha256 "${MUSL_X86_SHA}"
+              else
+                url "${BASE_URL}/vanbeach-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${LINUX_X86_SHA}"
+              end
+            end
+
+            def install
+              bin.install "vanbeach"
+            end
+          end
+          EOF
+
+          cat release/vanbeach.rb
+
       - name: Generate changelog
         id: changelog
         run: |
@@ -109,7 +166,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: release/*.tar.gz
+          files: |
+            release/*.tar.gz
+            release/checksums.txt
+            release/vanbeach.rb
           body_path: CHANGELOG.md
           draft: false
           prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
